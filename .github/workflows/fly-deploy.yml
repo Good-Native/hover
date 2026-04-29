@@ -124,7 +124,11 @@ jobs:
       - name: Release API app
         env:
           IMAGE: ${{ needs.build-shared.outputs.image }}
-        run: flyctl deploy --image "$IMAGE" --app hover
+        run: |
+          flyctl deploy --image "$IMAGE" --app hover
+          # Reap stale-image machines left behind by the new release —
+          # see PR #369 for why deploy alone isn't enough.
+          flyctl scale count 1 --process-group app -a hover --yes
 
   release-analysis:
     name: Release hover-analysis
@@ -164,6 +168,7 @@ jobs:
           flyctl deploy --image "$IMAGE" \
             --config fly.analysis.toml \
             --app hover-analysis
+          flyctl scale count 2 --process-group analysis -a hover-analysis --yes
 
   release-worker:
     name: Release hover-worker
@@ -207,6 +212,7 @@ jobs:
           flyctl deploy --image "$IMAGE" \
             --config fly.worker.toml \
             --app hover-worker
+          flyctl scale count 2 --process-group worker -a hover-worker --yes
 
   # ───────── Annotation ────────────────────────────────────────────────
   # if: always() so a partial deploy still produces an annotation for

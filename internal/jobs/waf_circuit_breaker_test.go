@@ -132,5 +132,78 @@ func TestWAFCircuitBreaker_NilSafe(t *testing.T) {
 	if tripped {
 		t.Fatalf("nil receiver tripped")
 	}
-	b.Forget("job-1") // must not panic
+	b.Forget("job-1")                        // must not panic
+	b.Rearm("job-1", crawler.WAFDetection{}) // must not panic
+}
+
+// TestWAFCircuitBreaker_RearmSeedsToThresholdMinusOne verifies the
+// post-Rearm fast-retrip behaviour: after a failed BlockJob dispatch,
+// the breaker is primed so a single subsequent blocked outcome
+// retrips immediately, rather than re-establishing the full
+// consecutive-WAF streak from zero. The first trip already proved the
+// site is consistently walling us; the retry shouldn't waste N-1
+// blocked observations re-proving it.
+func TestWAFCircuitBreaker_RearmSeedsToThresholdMinusOne(t *testing.T) {
+	b := &WAFCircuitBreaker{
+		threshold: 3,
+		counts:    make(map[string]int),
+		tripped:   make(map[string]struct{}),
+		vendors:   make(map[string]crawler.WAFDetection),
+	}
+
+	det := &crawler.WAFDetection{Blocked: true, Vendor: "akamai", Reason: "AkamaiGHost"}
+
+	// Establish the first trip the long way.
+	b.Observe("job-1", det) // 1
+	b.Observe("job-1", det) // 2
+	tripped, vendor := b.Observe("job-1", det)
+	if !tripped {
+		t.Fatalf("expected first trip at threshold=3")
+	}
+
+	// Simulate BlockJob failure: caller re-arms with the captured vendor.
+	b.Rearm("job-1", vendor)
+
+	// One blocked observation must be enough to retrip — we already
+	// established consecutiveness on the first trip.
+	tripped, retripVendor := b.Observe("job-1", det)
+	if !tripped {
+		t.Fatalf("expected immediate retrip after Rearm; took more than 1 blocked observation")
+	}
+	if retripVendor.Vendor != "akamai" {
+		t.Errorf("retrip vendor lost: got %q, want %q", retripVendor.Vendor, "akamai")
+	}
+}
+
+// TestWAFCircuitBreaker_RearmThenHealthyResetsStreak asserts the
+// recovery path: if the site stops walling us between trip attempts
+// (a non-blocked response arrives), the seeded counter clears so the
+// breaker doesn't pre-load its retrip from stale evidence.
+func TestWAFCircuitBreaker_RearmThenHealthyResetsStreak(t *testing.T) {
+	b := &WAFCircuitBreaker{
+		threshold: 3,
+		counts:    make(map[string]int),
+		tripped:   make(map[string]struct{}),
+		vendors:   make(map[string]crawler.WAFDetection),
+	}
+
+	det := &crawler.WAFDetection{Blocked: true, Vendor: "akamai"}
+
+	// Trip once.
+	b.Observe("job-1", det)
+	b.Observe("job-1", det)
+	_, vendor := b.Observe("job-1", det)
+
+	// Re-arm (simulates BlockJob failure).
+	b.Rearm("job-1", vendor)
+
+	// A healthy (non-blocked) response between trip attempts must
+	// clear the seeded counter — the site might have recovered.
+	b.Observe("job-1", nil)
+
+	// One blocked observation now must NOT retrip — counter starts
+	// fresh, needs threshold=3 again.
+	if tripped, _ := b.Observe("job-1", det); tripped {
+		t.Fatalf("breaker retripped after a healthy response cleared the seed; recovery path broken")
+	}
 }

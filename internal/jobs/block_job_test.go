@@ -46,9 +46,13 @@ func TestBlockJob_LockOrder(t *testing.T) {
 		WithArgs(jobID, string(TaskStatusSkipped), string(TaskStatusPending), string(TaskStatusWaiting)).
 		WillReturnResult(sqlmock.NewResult(0, 5))
 
-	// 2. Jobs second — error_message carries the WAF reason.
-	mock.ExpectExec(`UPDATE jobs\s+SET status = \$1, completed_at = \$2, error_message = \$3\s+WHERE id = \$4`).
-		WithArgs(string(JobStatusBlocked), sqlmock.AnyArg(), sqlmock.AnyArg(), jobID).
+	// 2. Jobs second — error_message carries the WAF reason. The
+	//    status IN (...) clause is the CAS guard: we only write when
+	//    the job is still in a pre-terminal state, so a concurrent
+	//    completion can't be silently overwritten.
+	mock.ExpectExec(`UPDATE jobs\s+SET status = \$1, completed_at = \$2, error_message = \$3\s+WHERE id = \$4\s+AND status IN \(\$5, \$6, \$7, \$8\)`).
+		WithArgs(string(JobStatusBlocked), sqlmock.AnyArg(), sqlmock.AnyArg(), jobID,
+			string(JobStatusRunning), string(JobStatusPending), string(JobStatusPaused), string(JobStatusInitialising)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	// 3. Outbox cleanup.
@@ -92,6 +96,55 @@ func TestBlockJob_AlreadyBlockedIsNoOp(t *testing.T) {
 
 	err = jm.BlockJob(context.Background(), jobID, "akamai", "")
 	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestBlockJob_RaceLostReturnsNil simulates the GetJob-pre-read-then-
+// concurrent-completion race: the pre-read sees `running`, the worker
+// completes the job, then BlockJob's tx fires and the CAS WHERE clause
+// matches zero rows. The whole tx must roll back (no outbox/domains
+// writes) and BlockJob must return nil — surfacing an error here
+// would be a red toast for a benign race.
+func TestBlockJob_RaceLostReturnsNil(t *testing.T) {
+	mockDB, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+	defer mockDB.Close()
+
+	jm := &JobManager{
+		db:             mockDB,
+		dbQueue:        &mockDbQueueWrapper{mockDB: mockDB},
+		processedPages: make(map[string]struct{}),
+	}
+
+	const jobID = "job-race-lost"
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT[\s\S]+FROM jobs j[\s\S]+JOIN domains d`).
+		WithArgs(jobID).
+		WillReturnRows(jobRow(jobID, JobStatusRunning))
+	mock.ExpectCommit()
+
+	mock.ExpectBegin()
+
+	// Tasks update can affect any number of rows — irrelevant once
+	// the CAS misses; the tx will roll back.
+	mock.ExpectExec(`(?s)WITH picked AS \(\s*SELECT id FROM tasks`).
+		WithArgs(jobID, string(TaskStatusSkipped), string(TaskStatusPending), string(TaskStatusWaiting)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	// CAS UPDATE matches zero rows — the concurrent terminal write
+	// removed the job from the eligible status set.
+	mock.ExpectExec(`UPDATE jobs\s+SET status = \$1, completed_at = \$2, error_message = \$3\s+WHERE id = \$4\s+AND status IN`).
+		WithArgs(string(JobStatusBlocked), sqlmock.AnyArg(), sqlmock.AnyArg(), jobID,
+			string(JobStatusRunning), string(JobStatusPending), string(JobStatusPaused), string(JobStatusInitialising)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	// No DELETE FROM task_outbox, no UPDATE domains — the tx must
+	// roll back as soon as the CAS RowsAffected check trips.
+	mock.ExpectRollback()
+
+	err = jm.BlockJob(context.Background(), jobID, "akamai", "Server: AkamaiGHost on 403")
+	require.NoError(t, err, "race-lost must surface as nil success, not error")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

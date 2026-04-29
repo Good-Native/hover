@@ -6,15 +6,26 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Harvey-AU/hover/internal/crawler"
 )
 
+// blockJobDispatchTimeout bounds the detached terminal-state write
+// fired when the breaker trips. The stream worker hot path must not
+// stall on lock contention; if BlockJob can't land in this budget the
+// caller logs and re-arms so a subsequent WAF response retries.
+const blockJobDispatchTimeout = 30 * time.Second
+
 // defaultWAFCircuitBreakerThreshold is the consecutive-WAF-response
-// count that trips the breaker mid-job. Tuned conservatively: once we
-// see three responses in a row carrying recognised WAF fingerprints we
-// have very high confidence the domain has flipped to blocking us.
-const defaultWAFCircuitBreakerThreshold = 3
+// count that trips the breaker mid-job. Lowered from 3 to 2 after
+// kmart.com.au-class observations: by the time three tasks have
+// returned WAF fingerprints, the sitemap discovery loop has typically
+// inserted thousands of URLs that all need to be skipped. Two
+// consecutive WAF-flagged responses is still high-confidence (random
+// transient 403s rarely cluster) and trips ~33% earlier, capping the
+// orphan-task accumulation. Override via GNH_WAF_CIRCUIT_BREAKER_THRESHOLD.
+const defaultWAFCircuitBreakerThreshold = 2
 
 // WAFCircuitBreaker tracks per-job runs of consecutive WAF-flagged
 // responses and trips a callback once the threshold is reached. The
@@ -102,6 +113,30 @@ func (b *WAFCircuitBreaker) Forget(jobID string) {
 	delete(b.tripped, jobID)
 }
 
+// Rearm clears the single-fire tripped flag for a job AND seeds the
+// consecutive-WAF counter to threshold-1 (with the previous trip's
+// vendor preserved) so a single subsequent blocked outcome immediately
+// retrips. Called when the dispatched BlockJob couldn't land — at
+// that point we've already proven the domain is consistently walling
+// us; making the retry re-establish the full streak would waste N-1
+// blocked observations. The counter still resets on any non-blocked
+// response (Observe), so a site that recovers between attempts still
+// gets a clean slate.
+func (b *WAFCircuitBreaker) Rearm(jobID string, lastVendor crawler.WAFDetection) {
+	if b == nil || jobID == "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.tripped, jobID)
+	seed := b.threshold - 1
+	if seed < 0 {
+		seed = 0
+	}
+	b.counts[jobID] = seed
+	b.vendors[jobID] = lastVendor
+}
+
 // Threshold exposes the configured trip count for telemetry/logging.
 func (b *WAFCircuitBreaker) Threshold() int {
 	if b == nil {
@@ -112,9 +147,14 @@ func (b *WAFCircuitBreaker) Threshold() int {
 
 // MaybeTripFromOutcome is the convenience wrapper used from the stream
 // worker hot path. It pulls the WAF detection from the outcome, calls
-// Observe, and on a trip dispatches BlockJob in a fresh detached
-// context (the caller's context is the per-task one and may be on its
-// way out).
+// Observe, and on a trip dispatches BlockJob in a detached goroutine
+// with a bounded timeout. If the dispatch fails the breaker is
+// re-armed for that job so a subsequent WAF response can retry.
+//
+// The dispatch is asynchronous so the stream worker isn't held up by
+// terminal-state DB lock contention — the per-task ACK / counter
+// decrement / batch enqueue must not stall behind a multi-statement
+// terminal transaction.
 func (b *WAFCircuitBreaker) MaybeTripFromOutcome(ctx context.Context, jm JobManagerInterface, outcome *TaskOutcome) {
 	if b == nil || jm == nil || outcome == nil || outcome.Task == nil {
 		return
@@ -128,17 +168,29 @@ func (b *WAFCircuitBreaker) MaybeTripFromOutcome(ctx context.Context, jm JobMana
 		return
 	}
 
-	jobsLog.Info("WAF circuit breaker tripped",
-		"job_id", outcome.Task.JobID,
+	jobID := outcome.Task.JobID
+	jobsLog.Info("WAF circuit breaker tripped; dispatching BlockJob",
+		"job_id", jobID,
 		"threshold", b.Threshold(),
 		"vendor", vendor.Vendor,
 		"reason", vendor.Reason)
 
-	// Detach so the per-task ctx cancellation doesn't truncate the
-	// terminal-state writes.
-	bgCtx := context.WithoutCancel(ctx)
-	if err := jm.BlockJob(bgCtx, outcome.Task.JobID, vendor.Vendor, "circuit breaker: "+vendor.Reason); err != nil {
-		jobsLog.Error("BlockJob from circuit breaker failed",
-			"error", err, "job_id", outcome.Task.JobID)
-	}
+	// Detach from the per-task ctx so the caller's cancellation
+	// doesn't truncate the terminal-state writes, then bound the
+	// dispatch so a wedged DB doesn't pin a goroutine forever.
+	parentCtx := context.WithoutCancel(ctx)
+	go func() {
+		dispatchCtx, cancel := context.WithTimeout(parentCtx, blockJobDispatchTimeout)
+		defer cancel()
+		if err := jm.BlockJob(dispatchCtx, jobID, vendor.Vendor, "circuit breaker: "+vendor.Reason); err != nil {
+			jobsLog.Error("BlockJob from circuit breaker failed; re-arming for retry",
+				"error", err, "job_id", jobID)
+			// Re-arm so the next WAF response for this job can trip
+			// again — without this a transient DB blip would silently
+			// permanently disable the breaker for the job. The vendor
+			// from this trip is preserved so the retrip's BlockJob
+			// call carries accurate attribution.
+			b.Rearm(jobID, vendor)
+		}
+	}()
 }

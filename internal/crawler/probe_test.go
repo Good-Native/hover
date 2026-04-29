@@ -66,6 +66,32 @@ func TestProbe_BodyTruncation(t *testing.T) {
 	}
 }
 
+func TestNormaliseProbeTarget(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"example.com", "https://example.com/"},
+		{"example.com/", "https://example.com/"},
+		{"  example.com  ", "https://example.com/"},
+		{"https://example.com", "https://example.com/"},
+		{"http://example.com/", "http://example.com/"},
+		// Case-insensitive scheme detection — without it
+		// "HTTPS://example.com" double-prefixed to
+		// "https://HTTPS://example.com/" and silently failed.
+		{"HTTPS://example.com", "HTTPS://example.com/"},
+		{"Http://example.com/", "Http://example.com/"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got := normaliseProbeTarget(tc.in)
+			if got != tc.want {
+				t.Errorf("normaliseProbeTarget(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 // redirectingTransport rewrites probe requests (which target https://<host>/)
 // onto the local httptest server, so we exercise the production
 // host-resolution code path while staying offline.

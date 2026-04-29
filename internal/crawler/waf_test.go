@@ -44,6 +44,53 @@ func TestDetectWAF(t *testing.T) {
 			reasonPrefix: "akaalb_ cookie",
 		},
 		{
+			// kmart.com.au-class: deeper page returns 403 with Akamai
+			// Bot Manager session cookie. Without this signal the
+			// detector would fall through to "generic tiny body".
+			name:   "akamai BM — _abck cookie on 403",
+			status: http.StatusForbidden,
+			headers: http.Header{
+				"Set-Cookie": []string{"_abck=06F95C1AA35B5110~-1~YAAQjyw...~-1~-1~-1~-1~-1; Domain=.example.com; Path=/"},
+			},
+			body:         []byte("blocked"),
+			wantBlocked:  true,
+			wantVendor:   WAFVendorAkamai,
+			reasonPrefix: "_abck",
+		},
+		{
+			name:   "akamai BM — bm_sz cookie on 403",
+			status: http.StatusForbidden,
+			headers: http.Header{
+				"Set-Cookie": []string{"bm_sz=E18A0D7D1B94A12A~YAAQjyw...; Domain=.example.com; Path=/"},
+			},
+			body:         []byte("blocked"),
+			wantBlocked:  true,
+			wantVendor:   WAFVendorAkamai,
+			reasonPrefix: "bm_sz",
+		},
+		{
+			// Critical negative test: Akamai BM cookies appear on every
+			// BM-fronted response, including legitimate 200s in monitor
+			// mode. Detector must NOT flag these — would over-trigger
+			// massively (every kmart.com.au homepage hit would block).
+			name:   "akamai BM — _abck on 200 must NOT trip (monitor mode)",
+			status: http.StatusOK,
+			headers: http.Header{
+				"Set-Cookie": []string{"_abck=06F95C1AA35B5110~-1~YAAQjyw...~-1~-1~-1~-1~-1; Domain=.example.com; Path=/"},
+			},
+			body:        []byte("<html>real content from monitor-mode site</html>"),
+			wantBlocked: false,
+		},
+		{
+			name:   "akamai BM — bm_sz on 200 must NOT trip (monitor mode)",
+			status: http.StatusOK,
+			headers: http.Header{
+				"Set-Cookie": []string{"bm_sz=E18A0D7D~YAAQjyw...; Domain=.example.com; Path=/"},
+			},
+			body:        []byte("<html>real content</html>"),
+			wantBlocked: false,
+		},
+		{
 			name:   "akamai — Server-Timing ak_p on 403",
 			status: http.StatusForbidden,
 			headers: http.Header{

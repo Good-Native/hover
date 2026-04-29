@@ -464,7 +464,11 @@ jobs:
           flyctl deploy \
             --image "$IMAGE" \
             --config .fly/review_apps.toml \
-            --app "$API_APP"
+            --app "$API_APP" \
+            --ha=false
+          # Reap any old-image machines left behind by the new release —
+          # see PR #369 for why --ha=false alone isn't enough on review apps.
+          flyctl scale count 1 --process-group app -a "$API_APP" --yes
 
   release-analysis:
     name: Release analysis review app
@@ -485,7 +489,9 @@ jobs:
           flyctl deploy \
             --image "$IMAGE" \
             --config .fly/review_apps.analysis.toml \
-            --app "$ANALYSIS_APP"
+            --app "$ANALYSIS_APP" \
+            --ha=false
+          flyctl scale count 1 --process-group analysis -a "$ANALYSIS_APP" --yes
 
   release-worker:
     name: Release worker review app
@@ -511,7 +517,9 @@ jobs:
           flyctl deploy \
             --image "$IMAGE" \
             --config .fly/review_apps.worker.toml \
-            --app "$WORKER_APP"
+            --app "$WORKER_APP" \
+            --ha=false
+          flyctl scale count 1 --process-group worker -a "$WORKER_APP" --yes
 
   # ───────── Comment on PR ─────────────────────────────────────────────
   # Single comment with the API URL — posted only after the API release

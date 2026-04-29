@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -23,6 +24,12 @@ import (
 )
 
 var jobsLog = logging.Component("jobs")
+
+// errBlockJobRaceLost is the sentinel a BlockJob transaction returns
+// when its CAS guard finds the job already in a terminal status set by
+// a concurrent writer. It is not a real failure — callers up-stack
+// translate it to nil success.
+var errBlockJobRaceLost = errors.New("block_job: lost race to terminal transition")
 
 type DbQueueProvider interface {
 	Execute(ctx context.Context, fn func(*sql.Tx) error) error
@@ -578,10 +585,64 @@ func (jm *JobManager) runWAFPreflight(ctx context.Context, job *Job, normalisedD
 		"reason", det.Reason)
 
 	if err := jm.BlockJob(ctx, job.ID, det.Vendor, det.Reason); err != nil {
-		jobsLog.Error("Failed to block job after WAF pre-flight detection",
-			"error", err, "job_id", job.ID)
+		jobsLog.Error("Failed to block job after WAF pre-flight detection; falling back to failed status",
+			"error", err, "job_id", job.ID, "domain", normalisedDomain,
+			"vendor", det.Vendor, "reason", det.Reason)
+		// Fail-safe: returning true after a failed BlockJob would
+		// strand the job in 'pending' with no tasks forever, because
+		// the caller skips discovery on the strength of our return
+		// value alone. Transition the job to failed via a separate
+		// path so the customer sees a terminal state either way.
+		// The customer-facing error_message stays stable; the raw
+		// underlying error is captured in the structured log above
+		// (with vendor/reason/domain context) for ops debugging.
+		const wafFallbackMsg = "WAF detected but block transition failed"
+		if failErr := jm.failJobWithMessage(ctx, job.ID, wafFallbackMsg); failErr != nil {
+			jobsLog.Error("Fallback failJob after BlockJob error also failed; allowing discovery to proceed",
+				"error", failErr, "job_id", job.ID)
+			return false
+		}
 	}
 	return true
+}
+
+// isJobInTerminalStatus reports whether a job's current row status is
+// one the discovery / link-extraction paths must stop adding tasks
+// for. Used between sitemap batches as a cheap pre-flight before each
+// EnqueueJobURLs round-trip; the DB-side guard in
+// dbQueue.EnqueueURLs is the race-free safety net.
+//
+// Read errors are treated as "not terminal" — a transient query
+// failure must not silently abort a healthy crawl.
+func (jm *JobManager) isJobInTerminalStatus(ctx context.Context, jobID string) bool {
+	var status string
+	err := jm.dbQueue.Execute(ctx, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, `SELECT status FROM jobs WHERE id = $1`, jobID).Scan(&status)
+	})
+	if err != nil {
+		jobsLog.Warn("Could not read job status during terminal-state check; continuing",
+			"error", err, "job_id", jobID)
+		return false
+	}
+	return db.IsTerminalJobStatus(status)
+}
+
+// failJobWithMessage transitions a job to JobStatusFailed with an
+// explanatory message. Used as the fallback path when a more specific
+// terminal transition (BlockJob) couldn't complete. The status guard
+// keeps a concurrent terminal write safe — we never overwrite a
+// completed/failed/cancelled/blocked row.
+func (jm *JobManager) failJobWithMessage(ctx context.Context, jobID, message string) error {
+	return jm.dbQueue.Execute(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			UPDATE jobs
+			   SET status = $1, error_message = $2, completed_at = $3
+			 WHERE id = $4
+			   AND status IN ($5, $6, $7, $8)
+		`, JobStatusFailed, message, time.Now().UTC(), jobID,
+			JobStatusRunning, JobStatusPending, JobStatusPaused, JobStatusInitialising)
+		return err
+	})
 }
 
 func (jm *JobManager) CreateJob(ctx context.Context, options *JobOptions) (*Job, error) {
@@ -916,13 +977,29 @@ func (jm *JobManager) BlockJob(ctx context.Context, jobID string, vendor, reason
 			return err
 		}
 
-		_, err = tx.ExecContext(ctx, `
+		// CAS guard: GetJob ran outside this tx, so another worker
+		// could have written a terminal state in between. Restrict the
+		// UPDATE to pre-terminal statuses and bail if zero rows match.
+		// Without this, a freshly-completed/failed/cancelled row would
+		// be silently overwritten with `blocked`, and worse, we'd
+		// stamp domains.waf_blocked off a verdict that didn't actually
+		// land for this run.
+		res, err := tx.ExecContext(ctx, `
 			UPDATE jobs
 			SET status = $1, completed_at = $2, error_message = $3
 			WHERE id = $4
-		`, job.Status, job.CompletedAt, errorMessage, job.ID)
+			  AND status IN ($5, $6, $7, $8)
+		`, job.Status, job.CompletedAt, errorMessage, job.ID,
+			JobStatusRunning, JobStatusPending, JobStatusPaused, JobStatusInitialising)
 		if err != nil {
 			return err
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected != 1 {
+			return errBlockJobRaceLost
 		}
 
 		_, err = tx.ExecContext(ctx, `
@@ -943,6 +1020,16 @@ func (jm *JobManager) BlockJob(ctx context.Context, jobID string, vendor, reason
 		`, vendor, job.ID)
 		return err
 	})
+
+	// errBlockJobRaceLost is not a real failure — a concurrent writer
+	// reached terminal first. The whole transaction rolled back, so no
+	// stale state landed; report success-equivalent so callers don't
+	// surface a red error to the customer.
+	if errors.Is(err, errBlockJobRaceLost) {
+		jobsLog.Info("BlockJob lost race to another terminal transition; treating as no-op",
+			"job_id", job.ID, "domain", job.Domain)
+		return nil
+	}
 
 	if err != nil {
 		span.SetTag("error", "true")
@@ -1303,7 +1390,7 @@ func (jm *JobManager) UpdateJobStatus(ctx context.Context, jobID string, status 
 
 	// Drop in-process state on terminal status so long-running workers don't accumulate per-job map entries.
 	switch status {
-	case JobStatusCompleted, JobStatusFailed, JobStatusCancelled, JobStatusArchived:
+	case JobStatusCompleted, JobStatusFailed, JobStatusCancelled, JobStatusArchived, JobStatusBlocked:
 		jm.clearProcessedPages(jobID)
 		jm.clearMilestoneState(jobID)
 	}
@@ -1447,6 +1534,21 @@ func (jm *JobManager) processSitemap(ctx context.Context, jobID, domain string, 
 			end := min(i+batchSize, len(urls))
 			batch := urls[i:end]
 			batchNum := (i / batchSize) + 1
+
+			// Cheap status read between batches: a concurrent BlockJob
+			// (pre-flight or circuit breaker) or CancelJob may have
+			// flipped the job terminal mid-discovery. The DB guard in
+			// dbQueue.EnqueueURLs is the load-bearing safety net, but
+			// stopping here saves the per-batch sitemap parsing + DB
+			// round-trip that would otherwise be wasted work for every
+			// remaining batch (kmart.com.au-class jobs have hundreds).
+			if jm.isJobInTerminalStatus(ctx, jobID) {
+				jobsLog.Info("Sitemap discovery aborting: job reached terminal status mid-loop",
+					"job_id", jobID, "batch_number", batchNum,
+					"batches_remaining", totalBatches-batchNum+1,
+					"urls_remaining", len(urls)-i)
+				return
+			}
 
 			select {
 			case jm.sitemapSem <- struct{}{}:
