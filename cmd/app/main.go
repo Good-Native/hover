@@ -349,6 +349,7 @@ type Config struct {
 	StripeSecretKey       string
 	StripeWebhookSecret   string
 	StripePublishableKey  string
+	StripePortalConfigID  string
 }
 
 //nolint:gocyclo // main function setup is naturally complex but straightforward setup logic
@@ -379,6 +380,7 @@ func main() {
 		StripeSecretKey:       os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret:   os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		StripePublishableKey:  os.Getenv("STRIPE_PUBLISHABLE_KEY"),
+		StripePortalConfigID:  os.Getenv("STRIPE_PORTAL_CONFIG_ID"),
 	}
 
 	if config.FlightRecorderEnabled {
@@ -657,6 +659,7 @@ func main() {
 		config.StripeSecretKey,
 		config.StripeWebhookSecret,
 		config.StripePublishableKey,
+		config.StripePortalConfigID,
 		getEnvWithDefault("SETTINGS_URL", ""),
 	)
 

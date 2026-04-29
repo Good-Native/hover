@@ -48,6 +48,10 @@ primary_region = 'syd'
   SLACK_CLIENT_ID = "475806237719.8953791603746"
   WEBFLOW_CLIENT_ID = "b0a05758d95823fcef73f57e836e55232bf7c5730794222786040800230ea329"
   GOOGLE_CLIENT_ID = "721107686014-okh41udv0lkb40ijnsoeh53unj9kn0en.apps.googleusercontent.com"
+  # Stripe Customer Portal Configuration (live). Leave empty until a live-mode
+  # bpc_ ID is created in the Stripe dashboard; the code falls back to the
+  # account's default portal config when this is unset.
+  STRIPE_PORTAL_CONFIG_ID = ""
   OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp-gateway-prod-au-southeast-1.grafana.net/otlp/v1/traces"
   # Cold-storage archival (R2) — defaults in internal/archive/archive.go
   ARCHIVE_PROVIDER = "r2"

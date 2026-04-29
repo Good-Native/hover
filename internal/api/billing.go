@@ -183,10 +183,16 @@ func (h *Handler) BillingPortal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, err := portalsession.New(&stripe.BillingPortalSessionParams{
+	params := &stripe.BillingPortalSessionParams{
 		Customer:  stripe.String(customerID),
 		ReturnURL: stripe.String(h.absoluteBaseURL(r) + "/settings"),
-	})
+	}
+	// Optional override — when unset, Stripe falls back to the account's
+	// default Customer Portal configuration.
+	if h.StripePortalConfigID != "" {
+		params.Configuration = stripe.String(h.StripePortalConfigID)
+	}
+	sess, err := portalsession.New(params)
 	if err != nil {
 		log.Error().Err(err).Str("org_id", orgID).Msg("Failed to create Stripe Portal Session")
 		InternalError(w, r, fmt.Errorf("failed to create portal session"))

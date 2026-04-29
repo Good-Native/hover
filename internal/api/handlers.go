@@ -224,11 +224,12 @@ type Handler struct {
 	StripeSecretKey      string
 	StripeWebhookSecret  string
 	StripePublishableKey string
+	StripePortalConfigID string
 	SettingsURL          string
 }
 
 // broker may be nil when Redis is not configured — admin reset endpoints skip the Redis clear in that case.
-func NewHandler(pgDB DBClient, jobsManager jobs.JobManagerInterface, loopsClient *loops.Client, broker BrokerCleaner, googleClientID, googleClientSecret, stripeSecretKey, stripeWebhookSecret, stripePublishableKey, settingsURL string) *Handler {
+func NewHandler(pgDB DBClient, jobsManager jobs.JobManagerInterface, loopsClient *loops.Client, broker BrokerCleaner, googleClientID, googleClientSecret, stripeSecretKey, stripeWebhookSecret, stripePublishableKey, stripePortalConfigID, settingsURL string) *Handler {
 	// Set the Stripe API key once at startup to avoid concurrent global writes.
 	stripe.Key = stripeSecretKey
 	return &Handler{
@@ -241,6 +242,7 @@ func NewHandler(pgDB DBClient, jobsManager jobs.JobManagerInterface, loopsClient
 		StripeSecretKey:      stripeSecretKey,
 		StripeWebhookSecret:  stripeWebhookSecret,
 		StripePublishableKey: stripePublishableKey,
+		StripePortalConfigID: stripePortalConfigID,
 		SettingsURL:          settingsURL,
 	}
 }
