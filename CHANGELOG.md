@@ -30,14 +30,21 @@ On merge, CI will:
 
 ### Fixed
 
-- Review-app deploys no longer stack machines on repeated PR pushes. Added
-  `--ha=false` and a follow-up `flyctl scale count 1 --process-group …` to all
-  three `flyctl deploy` calls in `.github/workflows/review-apps.yml` (API,
-  analysis, worker). The Apr-27 build/release split changed the release shape to
+- Review-app and prod deploys no longer stack machines on repeated pushes. The
+  Apr-27 build/release split changed the release shape to
   `flyctl deploy --image registry.fly.io/<app>:<label>`, which provisions a new
   machine instead of updating the existing one in place; worker and analysis
   have no `[http_service]` to auto-stop the stragglers, so each push left the
-  previous machine running. The scale step reaps them after the new image is up.
+  previous machine running. Fix:
+  - `.github/workflows/review-apps.yml` — added `--ha=false` plus a follow-up
+    `flyctl scale count 1 --process-group …` to all three release jobs (API,
+    analysis, worker), so each review-app converges on one machine per group.
+  - `.github/workflows/fly-deploy.yml` — added a follow-up `flyctl scale count`
+    to the prod release jobs (API → 1, analysis → 2, worker → 2) so prod keeps
+    its HA pair on worker/analysis without stale-image leftovers piling up.
+    Existing prod stragglers (`hover-worker`, `hover-analysis`) need a one-time
+    `flyctl machine destroy` of the stale-image machines before the next deploy
+    takes effect.
 
 ## Full changelog history
 
