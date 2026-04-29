@@ -15,6 +15,9 @@ type CrawlerInterface interface {
 	ParseSitemap(ctx context.Context, sitemapURL string) ([]string, error)
 	FilterURLs(urls []string, includePaths, excludePaths []string) []string
 	GetUserAgent() string
+	// Probe issues a pre-flight WAF fingerprint request against the
+	// homepage of a domain. Issue #365 row 1.
+	Probe(ctx context.Context, domain string) (crawler.WAFDetection, error)
 }
 
 // DbQueueInterface defines the database queue operations needed by the job system.

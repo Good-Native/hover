@@ -16,13 +16,13 @@ func TestParseRobotsTxtContent(t *testing.T) {
 		wantAllow    []string
 	}{
 		{
-			name: "HoverBot specific rules",
+			name: "Hover specific rules",
 			robotsTxt: `
 User-agent: *
 Crawl-delay: 1
 Disallow: /admin
 
-User-agent: HoverBot
+User-agent: Hover
 Crawl-delay: 5
 Disallow: /checkout
 Disallow: /cart
@@ -30,7 +30,7 @@ Allow: /cart/view
 
 Sitemap: https://example.com/sitemap.xml
 `,
-			userAgent:    "HoverBot/1.0 (+https://www.goodnative.co/bot)",
+			userAgent:    "Hover/1.0 (+https://www.goodnative.co/hover)",
 			wantDelay:    5,
 			wantSitemaps: []string{"https://example.com/sitemap.xml"},
 			wantDisallow: []string{"/checkout", "/cart"},
@@ -47,7 +47,7 @@ Disallow: /tmp/
 Sitemap: https://example.com/sitemap1.xml
 Sitemap: https://example.com/sitemap2.xml
 `,
-			userAgent:    "HoverBot/1.0",
+			userAgent:    "Hover/1.0",
 			wantDelay:    10,
 			wantSitemaps: []string{"https://example.com/sitemap1.xml", "https://example.com/sitemap2.xml"},
 			wantDisallow: []string{"/private/", "/tmp/"},
@@ -64,7 +64,7 @@ User-agent: Bingbot
 Crawl-delay: 3
 Disallow: /nobing
 `,
-			userAgent:    "HoverBot/1.0",
+			userAgent:    "Hover/1.0",
 			wantDelay:    0,
 			wantSitemaps: []string{},
 			wantDisallow: []string{},
@@ -84,7 +84,7 @@ Disallow: /checkout
 Disallow: /cart
 Allow: /cart/view
 `,
-			userAgent:    "HoverBot/1.0",
+			userAgent:    "Hover/1.0",
 			wantDelay:    1,
 			wantSitemaps: []string{"https://example.com/sitemap.xml"},
 			wantDisallow: []string{"/admin"},

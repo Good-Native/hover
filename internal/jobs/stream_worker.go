@@ -61,6 +61,10 @@ type StreamWorkerDeps struct {
 	// HTMLPersister is nil when ARCHIVE_PROVIDER is unset (local dev
 	// without R2); completed tasks then persist without HTML.
 	HTMLPersister *HTMLPersister
+	// WAFBreaker is nil-safe: when supplied, every task outcome runs
+	// through it and a domain that produces N consecutive WAF
+	// fingerprints trips a job-level block (issue #365 row 1).
+	WAFBreaker *WAFCircuitBreaker
 }
 
 type StreamWorkerOpts struct {
@@ -98,6 +102,7 @@ type StreamWorkerPool struct {
 	dbQueue       DbQueueInterface
 	jobManager    JobManagerInterface
 	htmlPersister *HTMLPersister
+	wafBreaker    *WAFCircuitBreaker
 	opts          StreamWorkerOpts
 
 	jobInfoCache map[string]*cachedJobInfo
@@ -154,6 +159,7 @@ func NewStreamWorkerPool(deps StreamWorkerDeps, opts StreamWorkerOpts) *StreamWo
 		dbQueue:          deps.DBQueue,
 		jobManager:       deps.JobManager,
 		htmlPersister:    deps.HTMLPersister,
+		wafBreaker:       deps.WAFBreaker,
 		opts:             opts,
 		jobInfoCache:     make(map[string]*cachedJobInfo),
 		linkDiscoverySem: make(chan struct{}, linkDiscoveryMaxInflight()),
@@ -385,6 +391,15 @@ func (swp *StreamWorkerPool) handleOutcome(ctx context.Context, msg broker.Strea
 		}
 	}
 	swp.batchManager.QueueTaskUpdate(outcome.Task)
+
+	// WAF circuit breaker: feed every outcome through the per-job
+	// counter and trip a job-level block once N consecutive responses
+	// carry recognised fingerprints. Runs after the task row update is
+	// queued so the per-task evidence is persisted before we mark the
+	// job terminal.
+	if swp.wafBreaker != nil && swp.jobManager != nil {
+		swp.wafBreaker.MaybeTripFromOutcome(ctx, swp.jobManager, outcome)
+	}
 
 	if len(outcome.DiscoveredLinks) > 0 {
 		swp.handleDiscoveredLinks(ctx, outcome)

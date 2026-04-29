@@ -232,6 +232,8 @@ func main() {
 		ReclaimInterval: 30 * time.Second,
 	}
 
+	wafBreaker := jobs.NewWAFCircuitBreaker()
+
 	swp := jobs.NewStreamWorkerPool(jobs.StreamWorkerDeps{
 		Consumer:      consumer,
 		Scheduler:     scheduler,
@@ -242,7 +244,18 @@ func main() {
 		DBQueue:       dbQueue,
 		JobManager:    jobManager,
 		HTMLPersister: htmlPersister,
+		WAFBreaker:    wafBreaker,
 	}, swpOpts)
+
+	// Drain per-job breaker state when a job terminates so a long-running
+	// worker doesn't accumulate map entries.
+	previousOnJobTerminated := jobManager.OnJobTerminated
+	jobManager.OnJobTerminated = func(ctx context.Context, jobID string) {
+		wafBreaker.Forget(jobID)
+		if previousOnJobTerminated != nil {
+			previousOnJobTerminated(ctx, jobID)
+		}
+	}
 
 	// Last-resort recovery: Fly's restart=always brings the worker back
 	// with fresh state when a Go-side wedge prevents in-process recovery.

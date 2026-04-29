@@ -47,8 +47,97 @@ On merge, CI will:
   Loops) from 1Password via `op inject` when `op` CLI is available
 - `.env.op` — committed `op://` template for local dev secrets
 
+_Add unreleased changes here._
+
+## Full changelog history
+
+## [0.33.15] – 2026-04-29
+
+### Fixed
+
+- Review-app and prod deploys no longer stack machines on repeated pushes. The
+  Apr-27 build/release split changed the release shape to
+  `flyctl deploy --image registry.fly.io/<app>:<label>`, which provisions a new
+  machine instead of updating the existing one in place; worker and analysis
+  have no `[http_service]` to auto-stop the stragglers, so each push left the
+  previous machine running. Fix:
+  - `.github/workflows/review-apps.yml` — added `--ha=false` plus a follow-up
+    `flyctl scale count 1 --process-group …` to all three release jobs (API,
+    analysis, worker), so each review-app converges on one machine per group.
+  - `.github/workflows/fly-deploy.yml` — added a follow-up `flyctl scale count`
+    to the prod release jobs (API → 1, analysis → 2, worker → 2) so prod keeps
+    its HA pair on worker/analysis without stale-image leftovers piling up.
+    Existing prod stragglers (`hover-worker`, `hover-analysis`) need a one-time
+    `flyctl machine destroy` of the stale-image machines before the next deploy
+    takes effect.
+
+## [0.33.14] – 2026-04-29
+
+### Fixed
+
+- WAF pre-flight no longer strands jobs in `pending` if `BlockJob`'s DB write
+  fails — a fallback transition writes `failed` with an explanatory message so
+  the job always reaches a terminal state.
+- Customer-facing `jobs.error_message` for the WAF fallback path is now a stable
+  `"WAF detected but block transition failed"` string. The raw underlying error
+  (which could include DB driver text like
+  `pq: SSL is not enabled on the server`) is still logged via the structured ops
+  logger with vendor/reason/domain context, but no longer leaks into the
+  customer-visible field.
+- `JobStatusBlocked` now triggers the same per-job in-process state cleanup
+  (`processedPages`, milestones) as the other terminal statuses; long-running
+  workers no longer leak map entries for blocked jobs.
+- WAF probe scheme detection is now case-insensitive — `HTTPS://example.com` no
+  longer double-prefixes to `https://HTTPS://...` and silently skips the
+  verdict.
+- `BlockJob` now CAS-guards the terminal `UPDATE jobs` against a stale pre-read
+  status, so a freshly-completed/failed/cancelled job from a concurrent worker
+  is no longer overwritten with `blocked` (and the domain row no longer stamped
+  off a verdict that didn't actually land for that run). A lost race rolls the
+  whole transaction back and surfaces as nil success.
+- The WAF mid-job circuit breaker now dispatches `BlockJob` in a detached
+  goroutine with a 30 s timeout, so the stream worker hot path can't stall on
+  terminal-state DB lock contention. On `BlockJob` failure the breaker re-arms
+  for the job, so a transient DB blip no longer permanently disables it.
+- `EnqueueURLs` now short-circuits under its existing `FOR UPDATE OF j` row lock
+  when the target job is in a terminal status (blocked, cancelled, failed,
+  completed, archived). Without this, sitemap discovery and link extraction kept
+  inserting orphan tasks for jobs that had already transitioned terminal
+  mid-flight — kmart.com.au-class jobs were accreting 32k+ pending rows after
+  the circuit breaker had already fired. The sitemap-discovery loop additionally
+  reads job status between batches as a cheap pre-flight, so terminal jobs stop
+  parsing remaining batches instead of round-tripping to the DB just to be
+  rejected.
+
 ### Changed
 
+- WAF detector now recognises Akamai Bot Manager `_abck` and `bm_sz` cookies on
+  blocking status codes (403/202) as Akamai signals. Catches BM-fronted sites
+  that don't emit `Server: AkamaiGHost` or `akaalb_*` cookies (e.g.
+  kmart.com.au) and gives the mid-job circuit breaker `vendor=akamai`
+  attribution instead of falling through to `generic`. Cookies on a 200 response
+  are explicitly NOT treated as a block — many sites run BM in monitor mode
+  without ever blocking.
+- WAF mid-job circuit breaker default threshold lowered from 3 → 2 consecutive
+  WAF responses. Trips ~33% earlier, capping orphan-task accumulation when a
+  large sitemap is mid-discovery. Override via
+  `GNH_WAF_CIRCUIT_BREAKER_THRESHOLD`.
+
+## [0.33.13] – 2026-04-28
+
+### Added
+
+- WAF detection on first contact (#365 row 1). Pre-flight probe + mid-job
+  circuit breaker recognise Cloudflare, Imperva, DataDome, and Akamai
+  fingerprints; jobs against blocked domains terminate with a new `blocked`
+  status instead of enqueueing thousands of doomed tasks. `domains.waf_blocked`
+  caches the verdict for 24 h. Customer-facing pill: amber "Blocked by site".
+
+## [0.33.12] – 2026-04-28
+
+### Changed
+
+- Crawler UA: `HoverBot` → `Hover`. Refs #365.
 - Trimmed narrative comments across recent broker, stream worker, and Lighthouse
   files (13 files, −1,055 lines net). Comment-only; no code logic changed.
   Load-bearing WHYs preserved.
@@ -90,8 +179,6 @@ On merge, CI will:
   is a safety net layered on top of the existing 120s `reconcileLoop`, not a
   replacement — closes the gap PR #362 left for future drift classes we haven't
   yet identified.
-
-## Full changelog history
 
 ## [0.33.11] – 2026-04-26
 

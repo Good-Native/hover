@@ -2,6 +2,39 @@ package db
 
 import "testing"
 
+func TestIsTerminalJobStatus(t *testing.T) {
+	cases := []struct {
+		status string
+		want   bool
+	}{
+		// Terminal statuses — EnqueueURLs short-circuits for these.
+		{"completed", true},
+		{"failed", true},
+		{"cancelled", true},
+		{"archived", true},
+		{"blocked", true},
+
+		// Non-terminal — task inserts proceed.
+		{"pending", false},
+		{"running", false},
+		{"initializing", false},
+		{"paused", false},
+
+		// Unknown / empty — must not be treated as terminal so a typo in
+		// the DB doesn't silently disable enqueueing.
+		{"", false},
+		{"unknown", false},
+		{"BLOCKED", false}, // case-sensitive: DB uses lowercase
+	}
+	for _, tc := range cases {
+		t.Run(tc.status, func(t *testing.T) {
+			if got := IsTerminalJobStatus(tc.status); got != tc.want {
+				t.Errorf("IsTerminalJobStatus(%q) = %v, want %v", tc.status, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestClassifyEnqueuedTaskDropsOverflowAtMaxPages(t *testing.T) {
 	disposition := classifyEnqueuedTask(10, 10, 0, 0, 3)
 	if disposition != enqueueTaskDrop {

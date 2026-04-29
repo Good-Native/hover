@@ -31,7 +31,7 @@ func DefaultConfig() *Config {
 		DefaultTimeout: 30 * time.Second,
 		MaxConcurrency: getEnvInt("GNH_CRAWLER_MAX_CONCURRENCY", 10),
 		RateLimit:      5, // Maximum no. of times per second (minimum delay 1/ratelimit)
-		UserAgent:      "HoverBot/1.0 (+https://www.goodnative.co/hover)",
+		UserAgent:      "Hover/1.0 (+https://www.goodnative.co/hover)",
 		RetryAttempts:  3,
 		RetryDelay:     500 * time.Millisecond,
 		SkipCachedURLs: false, // Default to crawling all URLs

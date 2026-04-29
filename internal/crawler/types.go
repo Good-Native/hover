@@ -107,6 +107,7 @@ type CrawlResult struct {
 	RequestDiagnostics  *RequestDiagnostics `json:"request_diagnostics,omitempty"`
 	BodySample          []byte              `json:"-"` // Truncated body for tech detection (not serialised)
 	Body                []byte              `json:"-"` // Full body for storage upload (not serialised)
+	WAF                 *WAFDetection       `json:"waf,omitempty"`
 }
 
 // RequestDiagnostics stores per-stage diagnostics for a crawl.

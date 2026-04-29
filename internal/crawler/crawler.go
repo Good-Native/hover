@@ -233,6 +233,18 @@ func (c *Crawler) GetUserAgent() string {
 	return c.config.UserAgent
 }
 
+// Probe runs a pre-flight WAF detection request against the homepage of
+// a domain using the crawler's configured User-Agent and shared probe
+// client. Reuses probeClient so the connection pool / DNS cache are
+// shared with the rest of the crawl path.
+func (c *Crawler) Probe(ctx context.Context, domain string) (WAFDetection, error) {
+	var transport http.RoundTripper
+	if c.probeClient != nil {
+		transport = c.probeClient.Transport
+	}
+	return Probe(ctx, domain, c.config.UserAgent, transport)
+}
+
 type tracingRoundTripper struct {
 	transport  http.RoundTripper
 	metricsMap *sync.Map
@@ -493,6 +505,13 @@ func (c *Crawler) setupResponseHandlers(collyClone *colly.Collector, result *Cra
 		cacheMeta := buildCacheMetadata(result.Headers)
 		result.CacheStatus = cacheMeta.NormalisedStatus
 
+		// WAF fingerprint runs against the unredacted result.Headers so the
+		// Akamai akaalb_ Set-Cookie signal survives — the diagnostic clone
+		// strips Set-Cookie before storage.
+		if det := DetectWAF(r.StatusCode, result.Headers, result.BodySample); det.Blocked {
+			result.WAF = &det
+		}
+
 		if r.StatusCode < 200 || r.StatusCode >= 300 {
 			result.Error = fmt.Sprintf("non-success status code: %d", r.StatusCode)
 		}
@@ -535,6 +554,13 @@ func (c *Crawler) setupResponseHandlers(collyClone *colly.Collector, result *Cra
 		result.Headers = responseHeaders
 		if r.Request != nil && r.Request.URL != nil {
 			result.RedirectURL = r.Request.URL.String()
+		}
+
+		// Detector also runs on error paths so 403 walls (Akamai/Cloudflare/
+		// DataDome) are flagged for the mid-job circuit breaker even when
+		// colly classifies the response as an error.
+		if det := DetectWAF(r.StatusCode, responseHeaders, r.Body); det.Blocked {
+			result.WAF = &det
 		}
 
 		result.RequestDiagnostics.Primary = buildRequestAttemptDiagnostics(

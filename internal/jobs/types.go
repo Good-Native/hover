@@ -15,6 +15,10 @@ const (
 	JobStatusFailed       JobStatus = "failed"
 	JobStatusCancelled    JobStatus = "cancelled"
 	JobStatusArchived     JobStatus = "archived"
+	// JobStatusBlocked is set when the WAF detector flags a domain as
+	// blocked (issue #365 row 1). The pre-flight probe and the mid-job
+	// circuit breaker both transition jobs into this terminal state.
+	JobStatusBlocked JobStatus = "blocked"
 )
 
 type TaskStatus string

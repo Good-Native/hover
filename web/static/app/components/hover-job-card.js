@@ -172,6 +172,12 @@ class HoverJobCard extends HTMLElement {
       outcomeDotClass = "dot--neutral";
       outcomeLabel = "Cancelled";
       statusColour = "var(--status-colour--neutral)";
+    } else if (normStatus === "blocked") {
+      // Amber rather than red — a WAF block is a site-owner decision,
+      // not a Hover failure. Keeps the support framing right.
+      outcomeDotClass = "dot--warning";
+      outcomeLabel = "Blocked by site";
+      statusColour = "var(--status-colour--warning)";
     } else if (isActive) {
       outcomeDotClass = "dot--warning";
       outcomeLabel = statusLabelForJob(normStatus);
@@ -627,6 +633,7 @@ function statusLabelForJob(status) {
   if (status === "pending") return "Starting up";
   if (status === "cancelled") return "Cancelled";
   if (status === "archived") return "Archived";
+  if (status === "blocked") return "Blocked by site";
   return "Error";
 }
 
@@ -638,6 +645,7 @@ function iconClassForJob(status) {
   if (status === "pending" || status === "queued")
     return `${base} ${base}--pending`;
   if (status === "archived") return `${base} ${base}--completed`;
+  if (status === "blocked") return `${base} ${base}--warning`;
   return `${base} ${base}--error`;
 }
 

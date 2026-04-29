@@ -888,6 +888,27 @@ type enqueueJobConfig struct {
 	orgID            sql.NullString
 	quotaRemaining   sql.NullInt64
 	currentTaskCount int
+	status           string
+}
+
+// terminalJobStatuses are job statuses past which no further task
+// inserts should land. The set mirrors the application-side
+// JobStatusCompleted/Failed/Cancelled/Archived/Blocked values.
+// Defined as a slice so the SQL ANY($N) form stays readable.
+var terminalJobStatuses = []string{"completed", "failed", "cancelled", "archived", "blocked"}
+
+// IsTerminalJobStatus reports whether the supplied status string is a
+// terminal job state past which task enqueueing should be a no-op.
+// Exposed for use in callers that hold a status they read separately
+// IsTerminalJobStatus reports whether the provided job status is a terminal state.
+// It returns `true` if the status is one of "completed", "failed", "cancelled", "archived", or "blocked", `false` otherwise.
+func IsTerminalJobStatus(status string) bool {
+	for _, t := range terminalJobStatuses {
+		if status == t {
+			return true
+		}
+	}
+	return false
 }
 
 // deduplicatePages removes duplicate pages, keeping highest priority for each page ID
@@ -1009,7 +1030,14 @@ func (q *DbQueue) EnqueueURLs(ctx context.Context, jobID string, pages []Page, s
 			return uniquePages[i].ID < uniquePages[j].ID
 		})
 
-		// Get job's max_pages, concurrency, domain, org, and current task counts.
+		// Get job's max_pages, concurrency, domain, org, status, and current
+		// task counts. Reading j.status under the same FOR UPDATE OF j as
+		// the INSERT below makes the terminal-state guard race-free against
+		// a concurrent BlockJob/CancelJob: either we acquire the lock
+		// first and see the pre-terminal status (the terminal write blocks
+		// until our tx commits, then it sees zero matching pending rows),
+		// or it commits first and we see the terminal status here and
+		// short-circuit without inserting orphan tasks.
 		// total_tasks - skipped_tasks is maintained incrementally by triggers and
 		// avoids the correlated COUNT(*) subquery that previously ran under the job lock.
 		err := tx.QueryRowContext(ctx, `
@@ -1019,15 +1047,27 @@ func (q *DbQueue) EnqueueURLs(ctx context.Context, jobID string, pages []Page, s
 				   CASE WHEN j.organisation_id IS NOT NULL
 				        THEN get_daily_quota_remaining(j.organisation_id)
 				        ELSE NULL
-				   END
+				   END,
+				   j.status
 			FROM jobs j
 			LEFT JOIN domains d ON j.domain_id = d.id
 			WHERE j.id = $1
 			FOR UPDATE OF j
 		`, jobID).Scan(&cfg.maxPages, &cfg.concurrency, &cfg.runningTasks, &cfg.pendingTaskCount,
-			&cfg.domainID, &cfg.domainName, &cfg.currentTaskCount, &cfg.orgID, &cfg.quotaRemaining)
+			&cfg.domainID, &cfg.domainName, &cfg.currentTaskCount, &cfg.orgID, &cfg.quotaRemaining,
+			&cfg.status)
 		if err != nil {
 			return fmt.Errorf("failed to get job configuration and task count: %w", err)
+		}
+
+		// Terminal-status guard: skip the entire INSERT path so a sitemap
+		// loop or link-discovery callback that's still running after a
+		// BlockJob/CancelJob doesn't accrete orphan tasks against the
+		// terminal job. Issue #365 row 1: kmart.com.au saw 32k+ rows
+		// land in tasks for a job that had already transitioned to
+		// `blocked` mid-discovery.
+		if IsTerminalJobStatus(cfg.status) {
+			return nil
 		}
 
 		// Calculate available slots with concurrency override and quota limits

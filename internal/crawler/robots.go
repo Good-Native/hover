@@ -19,7 +19,7 @@ type RobotsRules struct {
 	AllowPatterns    []string // override DisallowPatterns
 }
 
-// Precedence: HoverBot-specific section if present, else wildcard (*).
+// Precedence: Hover-specific section if present, else wildcard (*).
 // Aggressive SEO crawler sections (AhrefsBot, MJ12bot, ...) are intentionally
 // not matched — they often carry punitive 10s delays meant for them.
 func ParseRobotsTxt(ctx context.Context, domain string, userAgent string, transport ...http.RoundTripper) (*RobotsRules, error) {
@@ -93,7 +93,7 @@ func parseRobotsTxtContent(r io.Reader, userAgent string) (*RobotsRules, error) 
 	var inWildcardSection bool
 	var foundSpecificSection bool
 
-	// e.g. "HoverBot/1.0" -> "hoverbot"
+	// e.g. "Hover/1.0" -> "hover"
 	botName := strings.ToLower(strings.Split(userAgent, "/")[0])
 
 	wildcardRules := &RobotsRules{

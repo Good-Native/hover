@@ -40,6 +40,7 @@ const STATUS_LABELS = {
   cancelling: "Cancelling",
   skipped: "Skipped",
   archived: "Archived",
+  blocked: "Blocked by site",
 };
 
 /** @type {Record<string, string>} Maps status → CSS modifier for the icon */
@@ -57,6 +58,7 @@ const STATUS_ICON_MOD = {
   cancelling: "neutral",
   skipped: "neutral",
   archived: "neutral",
+  blocked: "neutral",
 };
 
 /** @type {Record<string, string>} Maps status → CSS modifier for the colour */
@@ -74,6 +76,9 @@ const STATUS_COLOUR_MOD = {
   cancelling: "neutral",
   skipped: "neutral",
   archived: "neutral",
+  // "warning" amber rather than "danger": a WAF block is a site-side
+  // decision, not a Hover failure — keeps the support framing right.
+  blocked: "warning",
 };
 
 const VALID_VARIANTS = new Set(["icon", "dot", "label"]);
