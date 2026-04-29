@@ -331,7 +331,7 @@ func (h *Handler) SetupRoutes(mux *http.ServeMux) {
 	mux.Handle("/v1/plans", http.HandlerFunc(h.PlansHandler))
 
 	mux.HandleFunc("/v1/webhooks/webflow/", h.WebflowWebhook)
-	mux.HandleFunc("/webhooks/stripe", h.StripeWebhook)
+	mux.HandleFunc("/v1/webhooks/stripe", h.StripeWebhook)
 
 	mux.Handle("/v1/billing/checkout", auth.AuthMiddleware(http.HandlerFunc(h.BillingCheckout)))
 	mux.Handle("/v1/billing/portal", auth.AuthMiddleware(http.HandlerFunc(h.BillingPortal)))

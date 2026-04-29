@@ -14,7 +14,7 @@ import (
 )
 
 // StripeWebhook handles incoming Stripe webhook events.
-// POST /webhooks/stripe — no auth, signature verified internally.
+// POST /v1/webhooks/stripe — no auth, signature verified internally.
 //
 // Handlers return a non-nil error only for transient failures (DB or Stripe API
 // errors). Permanent failures — malformed payloads, missing required fields,

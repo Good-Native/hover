@@ -140,7 +140,7 @@ inject_op_secrets() {
         echo "            GOOGLE_CLIENT_SECRET, LOOPS_API_KEY,"
         echo "            STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY"
         echo "   For Stripe webhooks locally, also run:"
-        echo "     stripe listen --forward-to localhost:8080/webhooks/stripe"
+        echo "     stripe listen --forward-to localhost:8080/v1/webhooks/stripe"
         return
     fi
 
@@ -161,7 +161,7 @@ inject_op_secrets() {
     if op inject -i .env.op >> .env.local 2>/dev/null; then
         echo "✅ External secrets loaded from 1Password"
         echo "   For Stripe webhooks locally, also run:"
-        echo "     stripe listen --forward-to localhost:8080/webhooks/stripe"
+        echo "     stripe listen --forward-to localhost:8080/v1/webhooks/stripe"
         echo "   Then add STRIPE_WEBHOOK_SECRET=<whsec_...> to .env.local"
     else
         echo "⚠️  Failed to load secrets from 1Password — check op vault access"
