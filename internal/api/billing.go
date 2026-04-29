@@ -116,9 +116,11 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Land back on the plans tab so the success toast (settings.js
+	// handleBillingRedirect) renders next to the new plan card.
 	baseURL := h.absoluteBaseURL(r)
-	successURL := baseURL + "/settings"
-	cancelURL := baseURL + "/settings"
+	successURL := baseURL + "/settings/plans"
+	cancelURL := baseURL + "/settings/plans"
 
 	sess, err := checkoutsession.New(&stripe.CheckoutSessionParams{
 		Customer: stripe.String(customerID),
@@ -185,7 +187,7 @@ func (h *Handler) BillingPortal(w http.ResponseWriter, r *http.Request) {
 
 	params := &stripe.BillingPortalSessionParams{
 		Customer:  stripe.String(customerID),
-		ReturnURL: stripe.String(h.absoluteBaseURL(r) + "/settings"),
+		ReturnURL: stripe.String(h.absoluteBaseURL(r) + "/settings/plans"),
 	}
 	// Optional override — when unset, Stripe falls back to the account's
 	// default Customer Portal configuration.

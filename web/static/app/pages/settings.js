@@ -24,6 +24,7 @@ import {
   loadPlansAndUsage,
   loadUsageHistory,
   loadBillingSection,
+  invalidateUsageCache,
 } from "/app/lib/settings/plans.js";
 import {
   loadSchedules,
@@ -231,6 +232,33 @@ async function handleInviteToken() {
   }
 }
 
+// ── Billing return ─────────────────────────────────────────────────────────────
+
+// Reads ?billing=success|cancelled set by the Stripe Checkout redirect, shows
+// a toast, busts the usage cache so loadPlansAndUsage picks up fresh state
+// (new plan, has_stripe_customer flip), and strips the query param so a reload
+// does not re-toast.
+function handleBillingRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const billing = params.get("billing");
+  if (!billing) return;
+
+  if (billing === "success") {
+    invalidateUsageCache();
+    toast("success", "Subscription activated");
+  } else if (billing === "cancelled") {
+    toast("warning", "Checkout cancelled");
+  }
+
+  params.delete("billing");
+  const cleanQuery = params.toString();
+  const cleanUrl =
+    window.location.pathname +
+    (cleanQuery ? "?" + cleanQuery : "") +
+    window.location.hash;
+  window.history.replaceState({}, "", cleanUrl);
+}
+
 // ── Refresh (called on org-switch) ──────────────────────────────────────────────
 
 async function refreshSections() {
@@ -294,6 +322,11 @@ async function init() {
 
   // Invite token handling.
   await handleInviteToken();
+
+  // Stripe Checkout return — show toast, bust the usage cache so the new
+  // plan/Manage Billing state renders on the first loadPlansAndUsage below,
+  // then strip the query param so reloads don't re-toast.
+  handleBillingRedirect();
 
   const c = getContainers();
 

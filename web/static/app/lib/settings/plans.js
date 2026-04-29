@@ -29,7 +29,7 @@ async function getUsage() {
   return response;
 }
 
-function invalidateUsageCache() {
+export function invalidateUsageCache() {
   _cachedUsage = null;
   _cachedUsageTs = 0;
 }
