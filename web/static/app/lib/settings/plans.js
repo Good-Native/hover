@@ -173,7 +173,14 @@ async function startCheckout(planId, btn) {
     }
   } catch (err) {
     console.error("Failed to start checkout:", err);
-    toast("error", "Failed to open checkout — please try again");
+    // Surface server messages for known cases (e.g. 409 — already subscribed).
+    // Stripe Checkout in subscription mode always creates a new sub, so the
+    // server rejects a second Checkout when one is already active.
+    const msg =
+      err?.status === 409 && err?.body?.message
+        ? err.body.message
+        : "Failed to open checkout — please try again";
+    toast("error", msg);
     if (btn) {
       btn.disabled = false;
       btn.textContent = "Upgrade";

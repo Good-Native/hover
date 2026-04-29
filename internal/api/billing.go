@@ -10,12 +10,24 @@ import (
 	portalsession "github.com/stripe/stripe-go/v82/billingportal/session"
 	checkoutsession "github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/customer"
+	stripesubscription "github.com/stripe/stripe-go/v82/subscription"
 )
 
-// BillingCheckout creates a Stripe Checkout Session for a plan upgrade.
+// BillingCheckout starts a paid-plan transition for the active organisation.
 // POST /v1/billing/checkout
 // Body: {"plan_id": "<uuid>"}
-// Returns: {"url": "https://checkout.stripe.com/..."}
+//
+// Behaviour depends on whether the org already has an active Stripe
+// subscription:
+//   - No subscription → creates a Stripe Checkout Session and returns its URL.
+//     The caller redirects the browser to checkout.stripe.com to collect
+//     payment; on completion Stripe fires checkout.session.completed which
+//     activates the plan via stripe_webhook.go.
+//   - Existing subscription → updates the subscription's line item in place
+//     via the Stripe Subscriptions API (Stripe handles proration). No browser
+//     redirect to Stripe is needed; the customer.subscription.updated webhook
+//     reconciles plan_id in the DB. Returns a same-origin success URL so the
+//     frontend can render its standard ?billing=success toast.
 func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		MethodNotAllowed(w, r)
@@ -41,19 +53,6 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 	if role != "admin" {
 		Forbidden(w, r, "Only organisation admins can manage billing")
-		return
-	}
-
-	// Stripe Checkout in subscription mode always creates a new subscription.
-	// Existing subscribers must use the BillingPortal to change plans, otherwise
-	// we end up with duplicate live subscriptions on the customer.
-	existingSubID, err := h.DB.GetStripeSubscriptionID(r.Context(), orgID)
-	if err != nil {
-		InternalError(w, r, fmt.Errorf("failed to check existing subscription: %w", err))
-		return
-	}
-	if existingSubID != "" {
-		Conflict(w, r, "Organisation already has an active subscription — use the billing portal to change plans")
 		return
 	}
 
@@ -83,7 +82,59 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get or create Stripe Customer for this organisation.
+	// Branch on existing subscription state.
+	existingSubID, err := h.DB.GetStripeSubscriptionID(r.Context(), orgID)
+	if err != nil {
+		InternalError(w, r, fmt.Errorf("failed to check existing subscription: %w", err))
+		return
+	}
+
+	baseURL := h.absoluteBaseURL(r)
+	settingsURL := baseURL + "/settings/plans"
+
+	if existingSubID != "" {
+		// Paid → different paid: update the existing subscription in place.
+		// Avoids duplicate live subscriptions and gives Stripe-managed proration.
+		sub, err := stripesubscription.Get(existingSubID, nil)
+		if err != nil {
+			log.Error().Err(err).Str("subscription_id", existingSubID).Msg("Failed to fetch existing Stripe subscription")
+			InternalError(w, r, fmt.Errorf("failed to fetch subscription"))
+			return
+		}
+		if sub.Items == nil || len(sub.Items.Data) == 0 {
+			log.Error().Str("subscription_id", existingSubID).Msg("Existing subscription has no line items")
+			InternalError(w, r, fmt.Errorf("subscription has no items"))
+			return
+		}
+		// If they're already on this price, no-op back to the success page.
+		if sub.Items.Data[0].Price != nil && sub.Items.Data[0].Price.ID == stripePriceID {
+			WriteSuccess(w, r, map[string]string{"url": settingsURL + "?billing=success"}, "Already on this plan")
+			return
+		}
+		// Stripe defaults proration_behavior to "create_prorations" — credits
+		// for unused time on the old plan offset the new plan, applied to the
+		// next invoice. Switch to "always_invoice" if we ever need immediate
+		// billing on upgrade.
+		_, err = stripesubscription.Update(existingSubID, &stripe.SubscriptionParams{
+			Items: []*stripe.SubscriptionItemsParams{
+				{
+					ID:    stripe.String(sub.Items.Data[0].ID),
+					Price: stripe.String(stripePriceID),
+				},
+			},
+		})
+		if err != nil {
+			log.Error().Err(err).Str("org_id", orgID).Str("subscription_id", existingSubID).Msg("Failed to update Stripe subscription")
+			InternalError(w, r, fmt.Errorf("failed to update subscription"))
+			return
+		}
+		// customer.subscription.updated webhook will reconcile plan_id in DB.
+		log.Info().Str("org_id", orgID).Str("subscription_id", existingSubID).Str("price_id", stripePriceID).Msg("Updated Stripe subscription to new plan")
+		WriteSuccess(w, r, map[string]string{"url": settingsURL + "?billing=success"}, "Plan updated")
+		return
+	}
+
+	// No existing subscription — first-time Checkout flow.
 	customerID, err := h.DB.GetStripeCustomerID(r.Context(), orgID)
 	if err != nil {
 		InternalError(w, r, fmt.Errorf("failed to fetch stripe customer: %w", err))
@@ -116,12 +167,6 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Land back on the plans tab so the success toast (settings.js
-	// handleBillingRedirect) renders next to the new plan card.
-	baseURL := h.absoluteBaseURL(r)
-	successURL := baseURL + "/settings/plans"
-	cancelURL := baseURL + "/settings/plans"
-
 	sess, err := checkoutsession.New(&stripe.CheckoutSessionParams{
 		Customer: stripe.String(customerID),
 		Mode:     stripe.String(string(stripe.CheckoutSessionModeSubscription)),
@@ -131,8 +176,8 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 				Quantity: stripe.Int64(1),
 			},
 		},
-		SuccessURL:        stripe.String(successURL + "?billing=success"),
-		CancelURL:         stripe.String(cancelURL + "?billing=cancelled"),
+		SuccessURL:        stripe.String(settingsURL + "?billing=success"),
+		CancelURL:         stripe.String(settingsURL + "?billing=cancelled"),
 		ClientReferenceID: stripe.String(orgID),
 	})
 	if err != nil {
