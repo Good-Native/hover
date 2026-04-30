@@ -171,7 +171,7 @@ jobs:
           flyctl deploy --image "$IMAGE" \
             --config fly.analysis.toml \
             --app hover-analysis
-          flyctl scale count 2 --process-group analysis -a hover-analysis --yes
+          flyctl scale count 1 --process-group analysis -a hover-analysis --yes
 
   release-worker:
     name: Release hover-worker
@@ -215,7 +215,7 @@ jobs:
           flyctl deploy --image "$IMAGE" \
             --config fly.worker.toml \
             --app hover-worker
-          flyctl scale count 2 --process-group worker -a hover-worker --yes
+          flyctl scale count 1 --process-group worker -a hover-worker --yes
 
   # ───────── Annotation ────────────────────────────────────────────────
   # if: always() so a partial deploy still produces an annotation for
