@@ -171,6 +171,19 @@ func (h *Handler) handleSubscriptionUpdated(r *http.Request, event stripe.Event,
 		return fmt.Errorf("resolve organisation: %w", err)
 	}
 
+	// Guard against events for non-current subscriptions. If the customer has
+	// a stale or duplicate sub on the same Stripe customer, an event for the
+	// wrong sub mustn't flip the org's plan. Only act when the event's sub ID
+	// matches what we have stored, or when no sub is stored (first-ever event).
+	storedSubID, err := h.DB.GetStripeSubscriptionID(r.Context(), orgID)
+	if err != nil {
+		return fmt.Errorf("fetch stored subscription id: %w", err)
+	}
+	if storedSubID != "" && storedSubID != sub.ID {
+		logger.Warn().Str("org_id", orgID).Str("event_subscription_id", sub.ID).Str("stored_subscription_id", storedSubID).Msg("Ignoring subscription.updated for non-current subscription")
+		return nil
+	}
+
 	if len(sub.Items.Data) == 0 {
 		logger.Warn().Str("org_id", orgID).Msg("subscription.updated: no line items — skipping plan update")
 		return nil
@@ -212,6 +225,18 @@ func (h *Handler) handleSubscriptionDeleted(r *http.Request, event stripe.Event,
 	if err != nil {
 		logger.Error().Err(err).Str("customer_id", sub.Customer.ID).Msg("Cannot resolve organisation")
 		return fmt.Errorf("resolve organisation: %w", err)
+	}
+
+	// Guard against events for non-current subscriptions (same rationale as
+	// handleSubscriptionUpdated). A delete on a zombie sub mustn't downgrade
+	// an org whose current paid sub is healthy.
+	storedSubID, err := h.DB.GetStripeSubscriptionID(r.Context(), orgID)
+	if err != nil {
+		return fmt.Errorf("fetch stored subscription id: %w", err)
+	}
+	if storedSubID != "" && storedSubID != sub.ID {
+		logger.Warn().Str("org_id", orgID).Str("event_subscription_id", sub.ID).Str("stored_subscription_id", storedSubID).Msg("Ignoring subscription.deleted for non-current subscription")
+		return nil
 	}
 
 	freePlanID, err := h.DB.GetFreePlanID(r.Context())

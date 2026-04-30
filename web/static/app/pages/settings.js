@@ -262,6 +262,11 @@ function handleBillingRedirect() {
 // ── Refresh (called on org-switch) ──────────────────────────────────────────────
 
 async function refreshSections() {
+  // refreshSections runs on org-switch (via gnh:org-switched). The usage
+  // cache in plans.js is keyed by the cache module, not by org, so we must
+  // bust it here or the new org's plan tab can render the previous org's
+  // plan/has_stripe_customer state for up to USAGE_CACHE_TTL.
+  invalidateUsageCache();
   const c = getContainers();
   const teamState = getTeamState();
   try {

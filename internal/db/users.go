@@ -688,13 +688,16 @@ func (db *DB) GetOrganisationUsageStats(ctx context.Context, orgID string) (*Usa
 		stats.UsagePercentage = float64(stats.DailyUsed) / float64(stats.DailyLimit) * 100
 	}
 
-	// Check whether this org has a Stripe customer on file.
+	// Check whether this org has a Stripe customer on file. A real DB error
+	// here must propagate — silently coercing to false would make billing
+	// actions look unavailable for customers who actually have Stripe set up.
 	var customerID sql.NullString
 	if err := db.client.QueryRowContext(ctx,
 		`SELECT stripe_customer_id FROM organisations WHERE id = $1`, orgID,
-	).Scan(&customerID); err == nil {
-		stats.HasStripeCustomer = customerID.Valid && customerID.String != ""
+	).Scan(&customerID); err != nil {
+		return nil, fmt.Errorf("failed to fetch stripe customer id: %w", err)
 	}
+	stats.HasStripeCustomer = customerID.Valid && customerID.String != ""
 
 	return &stats, nil
 }

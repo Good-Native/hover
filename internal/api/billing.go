@@ -202,7 +202,7 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sess, err := checkoutsession.New(&stripe.CheckoutSessionParams{
+	sessParams := &stripe.CheckoutSessionParams{
 		Customer: stripe.String(customerID),
 		Mode:     stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
@@ -214,7 +214,15 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 		SuccessURL:        stripe.String(settingsURL + "?billing=success"),
 		CancelURL:         stripe.String(settingsURL + "?billing=cancelled"),
 		ClientReferenceID: stripe.String(orgID),
-	})
+	}
+	// Idempotency key — Stripe returns the original session for repeated
+	// requests with the same key (24h window). Protects against double-clicks,
+	// network retries, and proxy retries handing the same org multiple
+	// checkout URLs that could complete to duplicate subscriptions. The key
+	// is org+price-scoped so legitimate switches to different prices still
+	// create fresh sessions.
+	sessParams.SetIdempotencyKey(fmt.Sprintf("checkout:%s:%s", orgID, stripePriceID))
+	sess, err := checkoutsession.New(sessParams)
 	if err != nil {
 		log.Error().Err(err).Str("org_id", orgID).Msg("Failed to create Stripe Checkout Session")
 		InternalError(w, r, fmt.Errorf("failed to create checkout session"))

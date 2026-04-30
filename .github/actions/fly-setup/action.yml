@@ -95,3 +95,12 @@ runs:
           echo "❌ REDIS_URL is required. Check 1Password: op://Good Native/hover-runtime/REDIS_URL" >&2
           exit 1
         fi
+        # Stripe live keys are loaded above; review apps override these with
+        # test keys before staging, so validation only runs in the prod path
+        # (gated by validate-redis-url == 'true').
+        for key in STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET STRIPE_PUBLISHABLE_KEY; do
+          if [ -z "${!key}" ]; then
+            echo "❌ ${key} is required for Stripe billing. Check 1Password: op://Good Native/hover-stripe/${key}" >&2
+            exit 1
+          fi
+        done
