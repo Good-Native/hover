@@ -144,23 +144,33 @@ export async function loadPlansAndUsage(container, options = {}) {
   }
 }
 
-// Switch to free — cancels the active Stripe subscription via the billing
-// backend so the customer stops being charged. The previous PUT
-// /v1/organisations/plan path silently updated plan_id locally without
-// telling Stripe, leaving subscriptions billing forever.
+// Switch to free — schedules cancellation of the active Stripe subscription
+// at the end of the current billing period. The customer keeps paid features
+// until then, then automatically downgrades when Stripe fires
+// customer.subscription.deleted.
 async function switchToFree(container, options = {}) {
   if (
     !confirm(
-      "Cancel your subscription and switch to the free plan? Your current plan stays active until the end of the billing period."
+      "Cancel your subscription? You'll keep your current plan until the end of the billing period, then revert to free."
     )
   ) {
     return;
   }
 
   try {
-    await post("/v1/billing/cancel", {});
+    const response = await post("/v1/billing/cancel", {});
     invalidateUsageCache();
-    toast("success", "Subscription cancelled");
+    const periodEnd = response?.period_end;
+    let msg = "Subscription cancellation scheduled";
+    if (typeof periodEnd === "number" && periodEnd > 0) {
+      const date = new Date(periodEnd * 1000).toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+      msg = `Plan stays active until ${date}, then reverts to free.`;
+    }
+    toast("success", msg);
     await loadPlansAndUsage(container, options);
     window.GNHQuota?.refresh();
   } catch (err) {

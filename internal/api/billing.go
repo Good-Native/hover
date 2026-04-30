@@ -150,6 +150,10 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 		// for unused time on the old plan offset the new plan, applied to the
 		// next invoice. Switch to "always_invoice" if we ever need immediate
 		// billing on upgrade.
+		//
+		// Also clear cancel_at_period_end: an admin who scheduled cancellation
+		// and then picks a different tier is implicitly re-affirming the
+		// subscription, so we shouldn't keep them queued for cancellation.
 		_, err = stripesubscription.Update(existingSubID, &stripe.SubscriptionParams{
 			Items: []*stripe.SubscriptionItemsParams{
 				{
@@ -157,6 +161,7 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 					Price: stripe.String(stripePriceID),
 				},
 			},
+			CancelAtPeriodEnd: stripe.Bool(false),
 		})
 		if err != nil {
 			log.Error().Err(err).Str("org_id", orgID).Str("subscription_id", existingSubID).Msg("Failed to update Stripe subscription")
@@ -279,17 +284,22 @@ func (h *Handler) BillingPortal(w http.ResponseWriter, r *http.Request) {
 	WriteSuccess(w, r, map[string]string{"url": sess.URL}, "Portal session created")
 }
 
-// BillingCancel cancels the org's active Stripe subscription and reverts to
-// the free plan. POST /v1/billing/cancel. Admin-only.
+// BillingCancel schedules cancellation of the org's Stripe subscription at the
+// end of the current billing period. POST /v1/billing/cancel. Admin-only.
 //
-// This is the canonical "Switch to Free" backend — calling Stripe to actually
-// cancel ensures the customer stops being billed. The frontend's PUT
-// /v1/organisations/plan path used to silently update plan_id locally without
-// touching Stripe, which left the subscription billing forever.
+// We use cancel_at_period_end semantics rather than immediate cancellation:
+// the customer keeps paid features through the period they have already paid
+// for, and Stripe transitions the subscription to "canceled" at the period
+// end — at which point the customer.subscription.deleted webhook fires and
+// our handler downgrades the org to free.
 //
-// We update the DB synchronously here so the UI reflects the change without
-// waiting for the customer.subscription.deleted webhook. The webhook handler
-// is idempotent so a second update on arrival is harmless.
+// The DB is intentionally NOT updated synchronously here — the org should
+// remain on its current paid plan until the period actually ends. If the
+// admin changes their mind during this window, BillingCheckout's update path
+// resets cancel_at_period_end back to false.
+//
+// Returns the period_end unix timestamp so the frontend can render
+// "Your plan stays active until <date>".
 func (h *Handler) BillingCancel(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		MethodNotAllowed(w, r)
@@ -323,40 +333,34 @@ func (h *Handler) BillingCancel(w http.ResponseWriter, r *http.Request) {
 		InternalError(w, r, fmt.Errorf("failed to fetch subscription: %w", err))
 		return
 	}
-
-	// Cancel the Stripe subscription if one exists. If the org somehow has no
-	// subscription (e.g. they've already cancelled, or they were never on a
-	// paid plan), still allow the local state transition to free — this is
-	// idempotent from the caller's perspective.
-	if subID != "" {
-		if _, err := stripesubscription.Cancel(subID, nil); err != nil {
-			log.Error().Err(err).Str("org_id", orgID).Str("subscription_id", subID).Msg("Failed to cancel Stripe subscription")
-			InternalError(w, r, fmt.Errorf("failed to cancel subscription"))
-			return
-		}
-		log.Info().Str("org_id", orgID).Str("subscription_id", subID).Msg("Cancelled Stripe subscription")
+	if subID == "" {
+		// No active subscription to cancel — nothing to do. Treat as success
+		// so the caller's flow is idempotent.
+		WriteSuccess(w, r, map[string]any{"success": true}, "No active subscription to cancel")
+		return
 	}
 
-	// Synchronously revert plan + clear sub ID so the frontend reloads with the
-	// new state. handleSubscriptionDeleted webhook will run the same updates
-	// on arrival; both are idempotent.
-	freePlanID, err := h.DB.GetFreePlanID(r.Context())
+	sub, err := stripesubscription.Update(subID, &stripe.SubscriptionParams{
+		CancelAtPeriodEnd: stripe.Bool(true),
+	})
 	if err != nil {
-		log.Error().Err(err).Str("org_id", orgID).Msg("Failed to fetch free plan id")
-		InternalError(w, r, fmt.Errorf("failed to revert to free plan"))
+		log.Error().Err(err).Str("org_id", orgID).Str("subscription_id", subID).Msg("Failed to schedule subscription cancellation")
+		InternalError(w, r, fmt.Errorf("failed to cancel subscription"))
 		return
 	}
-	if err := h.DB.SetOrganisationPlan(r.Context(), orgID, freePlanID); err != nil {
-		log.Error().Err(err).Str("org_id", orgID).Msg("Failed to revert organisation to free plan")
-		InternalError(w, r, fmt.Errorf("failed to revert to free plan"))
-		return
-	}
-	if err := h.DB.SetStripeSubscriptionID(r.Context(), orgID, ""); err != nil {
-		log.Error().Err(err).Str("org_id", orgID).Msg("Failed to clear Stripe subscription ID")
-		// Not fatal — webhook will retry the clear when it arrives.
+	log.Info().Str("org_id", orgID).Str("subscription_id", subID).Msg("Scheduled Stripe subscription cancellation at period end")
+
+	// Pull period_end from the first line item — Stripe v82 moved it from the
+	// subscription itself onto each item.
+	var periodEnd int64
+	if sub.Items != nil && len(sub.Items.Data) > 0 && sub.Items.Data[0] != nil {
+		periodEnd = sub.Items.Data[0].CurrentPeriodEnd
 	}
 
-	WriteSuccess(w, r, map[string]any{"success": true}, "Subscription cancelled")
+	WriteSuccess(w, r, map[string]any{
+		"success":    true,
+		"period_end": periodEnd,
+	}, "Subscription cancellation scheduled")
 }
 
 // absoluteBaseURL returns the scheme+host base URL for this request.
