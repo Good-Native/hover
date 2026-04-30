@@ -179,7 +179,15 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 			InternalError(w, r, fmt.Errorf("failed to update subscription"))
 			return
 		}
-		// customer.subscription.updated webhook will reconcile plan_id in DB.
+		// Synchronously update plan_id so the immediate redirect-back to
+		// /settings/plans renders the new plan without waiting for the
+		// customer.subscription.updated webhook to land. The webhook handler
+		// runs idempotently when it arrives.
+		if err := h.DB.SetOrganisationPlan(r.Context(), orgID, body.PlanID); err != nil {
+			// Don't fail the request — Stripe is already updated, the webhook
+			// will correct the DB shortly. Just log so the lag is visible.
+			billingLog.ErrorContext(r.Context(), "Failed to sync plan_id locally after subscription update — relying on webhook reconciliation", "error", err, "org_id", orgID, "plan_id", body.PlanID)
+		}
 		billingLog.InfoContext(r.Context(), "Updated Stripe subscription to new plan", "org_id", orgID, "subscription_id", existingSubID, "price_id", stripePriceID)
 		WriteSuccess(w, r, map[string]string{"url": settingsURL + "?billing=success"}, "Plan updated")
 		return
