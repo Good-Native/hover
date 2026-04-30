@@ -119,6 +119,9 @@ jobs:
             GRAFANA_CLOUD_USER="$GRAFANA_CLOUD_USER" \
             GRAFANA_CLOUD_API_KEY="$GRAFANA_CLOUD_API_KEY" \
             REDIS_URL="$REDIS_URL" \
+            STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
+            STRIPE_WEBHOOK_SECRET="$STRIPE_WEBHOOK_SECRET" \
+            STRIPE_PUBLISHABLE_KEY="$STRIPE_PUBLISHABLE_KEY" \
             --stage
 
       - name: Release API app

@@ -53,13 +53,24 @@ VALUES
 ON CONFLICT (provider_id, provider) DO NOTHING;
 
 -- =============================================================================
+-- public.plans — Stripe sandbox price IDs (review/local dev only).
+-- The migration sets live-mode price IDs for prod; this seed overrides them
+-- with sandbox IDs so non-prod environments check out against sandbox products.
+-- =============================================================================
+UPDATE plans SET stripe_price_id = 'price_1TRJTFS2RiCh0hZBTaF9EjA9' WHERE name = 'starter';
+UPDATE plans SET stripe_price_id = 'price_1TRImSS2RiCh0hZBRH8ZVXvD' WHERE name = 'plus';
+UPDATE plans SET stripe_price_id = 'price_1TRImtS2RiCh0hZBXrKCkR4n' WHERE name = 'pro';
+UPDATE plans SET stripe_price_id = 'price_1TRIm5S2RiCh0hZBxIILpcQn' WHERE name = 'ultra';
+UPDATE plans SET stripe_price_id = 'price_1TRIlCS2RiCh0hZBSg0h1CkX' WHERE name = 'max';
+
+-- =============================================================================
 -- public.organisations
 -- =============================================================================
 INSERT INTO public.organisations (id, name, plan_id, created_at, updated_at)
 VALUES
-    ('96f7546c-47ea-41f8-a3a3-46b4deb84105', 'Personal Organisation', (SELECT id FROM plans WHERE name = 'enterprise'), '2025-11-02 00:11:21.520651+00', '2025-11-02 00:11:21.520651+00'),
-    ('2cfb393e-03e3-4acc-b19a-0958e6332060', 'Harvey', (SELECT id FROM plans WHERE name = 'enterprise'), '2026-01-02 09:38:36.934168+00', '2026-01-02 09:38:36.934168+00'),
-    ('da324afb-ce97-4814-975e-b6203cb51b0a', 'Merry People', (SELECT id FROM plans WHERE name = 'enterprise'), '2026-01-02 09:38:43.358225+00', '2026-01-02 09:38:43.358225+00')
+    ('96f7546c-47ea-41f8-a3a3-46b4deb84105', 'Personal Organisation', (SELECT id FROM plans WHERE name = 'ultra'), '2025-11-02 00:11:21.520651+00', '2025-11-02 00:11:21.520651+00'),
+    ('2cfb393e-03e3-4acc-b19a-0958e6332060', 'Harvey', (SELECT id FROM plans WHERE name = 'ultra'), '2026-01-02 09:38:36.934168+00', '2026-01-02 09:38:36.934168+00'),
+    ('da324afb-ce97-4814-975e-b6203cb51b0a', 'Merry People', (SELECT id FROM plans WHERE name = 'ultra'), '2026-01-02 09:38:43.358225+00', '2026-01-02 09:38:43.358225+00')
 ON CONFLICT (id) DO UPDATE SET plan_id = EXCLUDED.plan_id;
 
 -- =============================================================================

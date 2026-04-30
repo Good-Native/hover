@@ -688,19 +688,31 @@ func (db *DB) GetOrganisationUsageStats(ctx context.Context, orgID string) (*Usa
 		stats.UsagePercentage = float64(stats.DailyUsed) / float64(stats.DailyLimit) * 100
 	}
 
+	// Check whether this org has a Stripe customer on file. A real DB error
+	// here must propagate — silently coercing to false would make billing
+	// actions look unavailable for customers who actually have Stripe set up.
+	var customerID sql.NullString
+	if err := db.client.QueryRowContext(ctx,
+		`SELECT stripe_customer_id FROM organisations WHERE id = $1`, orgID,
+	).Scan(&customerID); err != nil {
+		return nil, fmt.Errorf("failed to fetch stripe customer id: %w", err)
+	}
+	stats.HasStripeCustomer = customerID.Valid && customerID.String != ""
+
 	return &stats, nil
 }
 
 // UsageStats represents current usage statistics for an organisation
 type UsageStats struct {
-	DailyLimit      int       `json:"daily_limit"`
-	DailyUsed       int       `json:"daily_used"`
-	DailyRemaining  int       `json:"daily_remaining"`
-	UsagePercentage float64   `json:"usage_percentage"`
-	PlanID          string    `json:"plan_id"`
-	PlanName        string    `json:"plan_name"`
-	PlanDisplayName string    `json:"plan_display_name"`
-	ResetsAt        time.Time `json:"resets_at"`
+	DailyLimit        int       `json:"daily_limit"`
+	DailyUsed         int       `json:"daily_used"`
+	DailyRemaining    int       `json:"daily_remaining"`
+	UsagePercentage   float64   `json:"usage_percentage"`
+	PlanID            string    `json:"plan_id"`
+	PlanName          string    `json:"plan_name"`
+	PlanDisplayName   string    `json:"plan_display_name"`
+	ResetsAt          time.Time `json:"resets_at"`
+	HasStripeCustomer bool      `json:"has_stripe_customer"`
 }
 
 // Plan represents a subscription tier
@@ -713,13 +725,14 @@ type Plan struct {
 	IsActive          bool      `json:"is_active"`
 	SortOrder         int       `json:"sort_order"`
 	CreatedAt         time.Time `json:"created_at"`
+	StripePriceID     string    `json:"-"` // Internal — never returned to clients
 }
 
 // GetActivePlans returns all active subscription plans
 func (db *DB) GetActivePlans(ctx context.Context) ([]Plan, error) {
 	query := `
 		SELECT id, name, display_name, daily_page_limit, monthly_price_cents,
-		       is_active, sort_order, created_at
+		       is_active, sort_order, created_at, COALESCE(stripe_price_id, '')
 		FROM plans
 		WHERE is_active = true
 		ORDER BY sort_order
@@ -736,7 +749,7 @@ func (db *DB) GetActivePlans(ctx context.Context) ([]Plan, error) {
 		var p Plan
 		if err := rows.Scan(
 			&p.ID, &p.Name, &p.DisplayName, &p.DailyPageLimit, &p.MonthlyPriceCents,
-			&p.IsActive, &p.SortOrder, &p.CreatedAt,
+			&p.IsActive, &p.SortOrder, &p.CreatedAt, &p.StripePriceID,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan plan: %w", err)
 		}

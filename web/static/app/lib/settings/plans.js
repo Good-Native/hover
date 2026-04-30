@@ -5,11 +5,33 @@
  * Surface-agnostic: all render/action functions accept a container element.
  */
 
-import { get, put } from "/app/lib/api-client.js";
+import { get, post } from "/app/lib/api-client.js";
 import { showToast as _showToast } from "/app/components/hover-toast.js";
 
 function toast(variant, message) {
   _showToast(message, { variant });
+}
+
+// ── Usage cache ────────────────────────────────────────────────────────────────
+
+let _cachedUsage = null;
+let _cachedUsageTs = 0;
+const USAGE_CACHE_TTL = 30_000;
+
+async function getUsage() {
+  const now = Date.now();
+  if (_cachedUsage && now - _cachedUsageTs < USAGE_CACHE_TTL) {
+    return _cachedUsage;
+  }
+  const response = await get("/v1/usage");
+  _cachedUsage = response;
+  _cachedUsageTs = now;
+  return response;
+}
+
+export function invalidateUsageCache() {
+  _cachedUsage = null;
+  _cachedUsageTs = 0;
 }
 
 // ── Plans & Usage ──────────────────────────────────────────────────────────────
@@ -32,7 +54,7 @@ export async function loadPlansAndUsage(container, options = {}) {
 
   try {
     const [usageResponse, plansResponse] = await Promise.all([
-      get("/v1/usage"),
+      getUsage(),
       get("/v1/plans"),
     ]);
 
@@ -96,11 +118,19 @@ export async function loadPlansAndUsage(container, options = {}) {
           } else if (role !== "admin") {
             actionBtn.textContent = "Admin only";
             actionBtn.disabled = true;
-          } else {
-            actionBtn.textContent = "Switch plan";
+          } else if (plan.monthly_price_cents > 0) {
+            actionBtn.textContent = "Upgrade";
             actionBtn.disabled = false;
             actionBtn.addEventListener("click", () =>
-              switchPlan(plan.id, container, options)
+              startCheckout(plan.id, actionBtn)
+            );
+          } else {
+            // Downgrading to free — cancel the Stripe subscription via the
+            // billing backend (so the customer stops being charged).
+            actionBtn.textContent = "Switch to Free";
+            actionBtn.disabled = false;
+            actionBtn.addEventListener("click", () =>
+              switchToFree(container, options)
             );
           }
         }
@@ -114,19 +144,117 @@ export async function loadPlansAndUsage(container, options = {}) {
   }
 }
 
-async function switchPlan(planId, container, options = {}) {
-  if (!planId) return;
-  if (!confirm("Switch to this plan?")) return;
+// Switch to free — schedules cancellation of the active Stripe subscription
+// at the end of the current billing period. The customer keeps paid features
+// until then, then automatically downgrades when Stripe fires
+// customer.subscription.deleted.
+async function switchToFree(container, options = {}) {
+  if (
+    !confirm(
+      "Cancel your subscription? You'll keep your current plan until the end of the billing period, then revert to free."
+    )
+  ) {
+    return;
+  }
 
   try {
-    await put("/v1/organisations/plan", { plan_id: planId });
-    toast("success", "Plan updated");
+    const response = await post("/v1/billing/cancel", {});
+    invalidateUsageCache();
+    const periodEnd = response?.period_end;
+    let msg = "Subscription cancellation scheduled";
+    if (typeof periodEnd === "number" && periodEnd > 0) {
+      const date = new Date(periodEnd * 1000).toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+      msg = `Plan stays active until ${date}, then reverts to free.`;
+    }
+    toast("success", msg);
     await loadPlansAndUsage(container, options);
     window.GNHQuota?.refresh();
   } catch (err) {
-    console.error("Failed to switch plan:", err);
-    toast("error", "Failed to switch plan");
+    console.error("Failed to cancel subscription:", err);
+    const msg =
+      err?.body?.message || "Failed to cancel subscription — please try again";
+    toast("error", msg);
   }
+}
+
+async function startCheckout(planId, btn) {
+  if (!planId) return;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Loading…";
+  }
+  try {
+    const response = await post("/v1/billing/checkout", { plan_id: planId });
+    if (response.url) {
+      window.location.href = response.url;
+    }
+  } catch (err) {
+    console.error("Failed to start checkout:", err);
+    // Surface server messages for known cases (e.g. 409 — already subscribed).
+    // Stripe Checkout in subscription mode always creates a new sub, so the
+    // server rejects a second Checkout when one is already active.
+    const msg =
+      err?.status === 409 && err?.body?.message
+        ? err.body.message
+        : "Failed to open checkout — please try again";
+    toast("error", msg);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Upgrade";
+    }
+  }
+}
+
+/**
+ * Initialise the billing section — fetch current billing state and wire
+ * up the "Manage billing" button. Reads has_stripe_customer from /v1/usage.
+ */
+export async function loadBillingSection() {
+  const btn = document.getElementById("manageBillingBtn");
+  const status = document.getElementById("billingStatus");
+  if (!btn) return;
+
+  let hasStripeCustomer = false;
+  try {
+    const usageResponse = await getUsage();
+    hasStripeCustomer = !!usageResponse?.usage?.has_stripe_customer;
+  } catch (err) {
+    console.error("Failed to fetch billing status:", err);
+  }
+
+  if (!hasStripeCustomer) {
+    // No subscription yet — keep button disabled.
+    return;
+  }
+
+  if (status) {
+    status.textContent =
+      "Manage your subscription, update payment methods, and view invoices.";
+  }
+  btn.disabled = false;
+  // Replace the button to avoid duplicate listeners on refresh.
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", async () => {
+    fresh.disabled = true;
+    fresh.textContent = "Opening…";
+    try {
+      const response = await post("/v1/billing/portal", {});
+      if (response.url) {
+        window.location.href = response.url;
+      }
+    } catch (err) {
+      console.error("Failed to open billing portal:", err);
+      toast("error", "Failed to open billing portal — please try again");
+      fresh.disabled = false;
+      fresh.textContent = "Manage billing";
+    }
+  });
 }
 
 // ── Usage history ──────────────────────────────────────────────────────────────

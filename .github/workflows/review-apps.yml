@@ -66,6 +66,21 @@ jobs:
           # the composite is irrelevant here and must not be validated.
           validate-redis-url: "false"
 
+      - name: Load Stripe test keys
+        # Review apps deliberately use Stripe TEST keys so PR work can't move
+        # real money. These overlay any prod values that might leak in.
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          STRIPE_SECRET_KEY:
+            op://Good Native/hover-stripe/_TEST_STRIPE_SECRET_KEY
+          STRIPE_WEBHOOK_SECRET:
+            op://Good Native/hover-stripe/_TEST_STRIPE_WEBHOOK_SECRET
+          STRIPE_PUBLISHABLE_KEY:
+            op://Good Native/hover-stripe/_TEST_STRIPE_PUBLISHABLE_KEY
+
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
@@ -317,6 +332,9 @@ jobs:
             ARCHIVE_ENDPOINT="$ARCHIVE_ENDPOINT" \
             GRAFANA_CLOUD_USER="$GRAFANA_CLOUD_USER" \
             GRAFANA_CLOUD_API_KEY="$GRAFANA_CLOUD_API_KEY" \
+            STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY" \
+            STRIPE_WEBHOOK_SECRET="$STRIPE_WEBHOOK_SECRET" \
+            STRIPE_PUBLISHABLE_KEY="$STRIPE_PUBLISHABLE_KEY" \
             WEBFLOW_REDIRECT_URI="${API_URL}/v1/integrations/webflow/callback" \
             APP_URL="$API_URL" \
             SETTINGS_URL="${API_URL}/settings" \

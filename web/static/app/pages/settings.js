@@ -23,6 +23,8 @@ import {
 import {
   loadPlansAndUsage,
   loadUsageHistory,
+  loadBillingSection,
+  invalidateUsageCache,
 } from "/app/lib/settings/plans.js";
 import {
   loadSchedules,
@@ -230,9 +232,41 @@ async function handleInviteToken() {
   }
 }
 
+// ── Billing return ─────────────────────────────────────────────────────────────
+
+// Reads ?billing=success|cancelled set by the Stripe Checkout redirect, shows
+// a toast, busts the usage cache so loadPlansAndUsage picks up fresh state
+// (new plan, has_stripe_customer flip), and strips the query param so a reload
+// does not re-toast.
+function handleBillingRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const billing = params.get("billing");
+  if (!billing) return;
+
+  if (billing === "success") {
+    invalidateUsageCache();
+    toast("success", "Subscription activated");
+  } else if (billing === "cancelled") {
+    toast("warning", "Checkout cancelled");
+  }
+
+  params.delete("billing");
+  const cleanQuery = params.toString();
+  const cleanUrl =
+    window.location.pathname +
+    (cleanQuery ? "?" + cleanQuery : "") +
+    window.location.hash;
+  window.history.replaceState({}, "", cleanUrl);
+}
+
 // ── Refresh (called on org-switch) ──────────────────────────────────────────────
 
 async function refreshSections() {
+  // refreshSections runs on org-switch (via gnh:org-switched). The usage
+  // cache in plans.js is keyed by the cache module, not by org, so we must
+  // bust it here or the new org's plan tab can render the previous org's
+  // plan/has_stripe_customer state for up to USAGE_CACHE_TTL.
+  invalidateUsageCache();
   const c = getContainers();
   const teamState = getTeamState();
   try {
@@ -243,6 +277,7 @@ async function refreshSections() {
       currentUserRole: teamState.currentUserRole,
     });
     await loadUsageHistory(c.plans);
+    await loadBillingSection();
     await loadSchedules(c.schedules);
     await loadSlackConnections();
     await loadWebflowConnections();
@@ -293,6 +328,11 @@ async function init() {
   // Invite token handling.
   await handleInviteToken();
 
+  // Stripe Checkout return — show toast, bust the usage cache so the new
+  // plan/Manage Billing state renders on the first loadPlansAndUsage below,
+  // then strip the query param so reloads don't re-toast.
+  handleBillingRedirect();
+
   const c = getContainers();
 
   // Wire up event listeners for section modules.
@@ -313,6 +353,7 @@ async function init() {
       currentUserRole: teamState.currentUserRole,
     });
     await loadUsageHistory(c.plans);
+    await loadBillingSection();
     await loadSchedules(c.schedules);
   } catch (err) {
     console.error("Failed to initialise settings sections:", err);

@@ -21,6 +21,7 @@ import (
 	"github.com/Harvey-AU/hover/internal/jobs"
 	"github.com/Harvey-AU/hover/internal/logging"
 	"github.com/Harvey-AU/hover/internal/loops"
+	stripe "github.com/stripe/stripe-go/v82"
 )
 
 // Set via ldflags at build time.
@@ -187,6 +188,15 @@ type DBClient interface {
 	GetPlatformOrgMapping(ctx context.Context, platform, platformID string) (*db.PlatformOrgMapping, error)
 	GetOrganisationUsageStats(ctx context.Context, orgID string) (*db.UsageStats, error)
 	GetActivePlans(ctx context.Context) ([]db.Plan, error)
+	// Stripe billing methods
+	SetStripeCustomerID(ctx context.Context, organisationID, customerID string) error
+	GetStripeCustomerID(ctx context.Context, organisationID string) (string, error)
+	GetOrganisationIDByStripeCustomerID(ctx context.Context, customerID string) (string, error)
+	SetStripeSubscriptionID(ctx context.Context, organisationID, subscriptionID string) error
+	GetStripeSubscriptionID(ctx context.Context, organisationID string) (string, error)
+	GetPlanByStripePriceID(ctx context.Context, priceID string) (*db.Plan, error)
+	GetFreePlanID(ctx context.Context) (string, error)
+	// Webflow site settings methods
 	CreateOrUpdateSiteSetting(ctx context.Context, setting *db.WebflowSiteSetting) error
 	GetSiteSetting(ctx context.Context, organisationID, webflowSiteID string) (*db.WebflowSiteSetting, error)
 	GetSiteSettingByID(ctx context.Context, id string) (*db.WebflowSiteSetting, error)
@@ -205,23 +215,35 @@ type BrokerCleaner interface {
 }
 
 type Handler struct {
-	DB                 DBClient
-	JobsManager        jobs.JobManagerInterface
-	Loops              *loops.Client
-	Broker             BrokerCleaner
-	GoogleClientID     string
-	GoogleClientSecret string
+	DB                   DBClient
+	JobsManager          jobs.JobManagerInterface
+	Loops                *loops.Client
+	Broker               BrokerCleaner
+	GoogleClientID       string
+	GoogleClientSecret   string
+	StripeSecretKey      string
+	StripeWebhookSecret  string
+	StripePublishableKey string
+	StripePortalConfigID string
+	SettingsURL          string
 }
 
 // broker may be nil when Redis is not configured — admin reset endpoints skip the Redis clear in that case.
-func NewHandler(pgDB DBClient, jobsManager jobs.JobManagerInterface, loopsClient *loops.Client, broker BrokerCleaner, googleClientID, googleClientSecret string) *Handler {
+func NewHandler(pgDB DBClient, jobsManager jobs.JobManagerInterface, loopsClient *loops.Client, broker BrokerCleaner, googleClientID, googleClientSecret, stripeSecretKey, stripeWebhookSecret, stripePublishableKey, stripePortalConfigID, settingsURL string) *Handler {
+	// Set the Stripe API key once at startup to avoid concurrent global writes.
+	stripe.Key = stripeSecretKey
 	return &Handler{
-		DB:                 pgDB,
-		JobsManager:        jobsManager,
-		Loops:              loopsClient,
-		Broker:             broker,
-		GoogleClientID:     googleClientID,
-		GoogleClientSecret: googleClientSecret,
+		DB:                   pgDB,
+		JobsManager:          jobsManager,
+		Loops:                loopsClient,
+		Broker:               broker,
+		GoogleClientID:       googleClientID,
+		GoogleClientSecret:   googleClientSecret,
+		StripeSecretKey:      stripeSecretKey,
+		StripeWebhookSecret:  stripeWebhookSecret,
+		StripePublishableKey: stripePublishableKey,
+		StripePortalConfigID: stripePortalConfigID,
+		SettingsURL:          settingsURL,
 	}
 }
 
@@ -311,6 +333,11 @@ func (h *Handler) SetupRoutes(mux *http.ServeMux) {
 	mux.Handle("/v1/plans", http.HandlerFunc(h.PlansHandler))
 
 	mux.HandleFunc("/v1/webhooks/webflow/", h.WebflowWebhook)
+	mux.HandleFunc("/v1/webhooks/stripe", h.StripeWebhook)
+
+	mux.Handle("/v1/billing/checkout", auth.AuthMiddleware(http.HandlerFunc(h.BillingCheckout)))
+	mux.Handle("/v1/billing/portal", auth.AuthMiddleware(http.HandlerFunc(h.BillingPortal)))
+	mux.Handle("/v1/billing/cancel", auth.AuthMiddleware(http.HandlerFunc(h.BillingCancel)))
 
 	mux.Handle("/v1/integrations/slack", auth.AuthMiddleware(http.HandlerFunc(h.SlackConnectionsHandler)))
 	mux.Handle("/v1/integrations/slack/", auth.AuthMiddleware(http.HandlerFunc(h.SlackConnectionHandler)))

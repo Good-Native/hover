@@ -132,6 +132,44 @@ else
     done
 fi
 
+inject_op_secrets() {
+    if ! command -v op >/dev/null 2>&1; then
+        echo "⚠️  1Password CLI (op) not found — external secrets not loaded."
+        echo "   Install: brew install 1password-cli"
+        echo "   Missing: SLACK_CLIENT_SECRET, WEBFLOW_CLIENT_SECRET,"
+        echo "            GOOGLE_CLIENT_SECRET, LOOPS_API_KEY,"
+        echo "            STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY"
+        echo "   For Stripe webhooks locally, also run:"
+        echo "     stripe listen --forward-to localhost:8080/v1/webhooks/stripe"
+        return
+    fi
+
+    if ! op whoami >/dev/null 2>&1; then
+        echo "⚠️  Not signed in to 1Password CLI — external secrets not loaded."
+        echo "   Sign in with: op signin"
+        return
+    fi
+
+    # Strip previously injected keys before re-injecting (avoids duplicates on re-run).
+    for key in SLACK_CLIENT_SECRET WEBFLOW_CLIENT_SECRET GOOGLE_CLIENT_SECRET \
+               LOOPS_API_KEY STRIPE_SECRET_KEY STRIPE_PUBLISHABLE_KEY; do
+        sed -i.bak "/^${key}=/d" .env.local
+    done
+    rm -f .env.local.bak
+
+    echo "Loading external secrets from 1Password..."
+    if op inject -i .env.op >> .env.local 2>/dev/null; then
+        echo "✅ External secrets loaded from 1Password"
+        echo "   For Stripe webhooks locally, also run:"
+        echo "     stripe listen --forward-to localhost:8080/v1/webhooks/stripe"
+        echo "   Then add STRIPE_WEBHOOK_SECRET=<whsec_...> to .env.local"
+    else
+        echo "⚠️  Failed to load secrets from 1Password — check op vault access"
+    fi
+}
+
+inject_op_secrets
+
 # Start Air with hot reloading and migration watching
 echo "Starting development server with hot reloading..."
 echo "Watching for migration changes - will auto-reset database when needed..."

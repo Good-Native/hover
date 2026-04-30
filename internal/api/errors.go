@@ -100,6 +100,10 @@ func NotFound(w http.ResponseWriter, r *http.Request, message string) {
 	WriteErrorMessage(w, r, message, http.StatusNotFound, ErrCodeNotFound)
 }
 
+func Conflict(w http.ResponseWriter, r *http.Request, message string) {
+	WriteErrorMessage(w, r, message, http.StatusConflict, ErrCodeConflict)
+}
+
 func MethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	WriteErrorMessage(w, r, "Method not allowed", http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed)
 }

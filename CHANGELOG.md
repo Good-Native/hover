@@ -32,6 +32,66 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.0] – 2026-04-30
+
+### Added
+
+- Stripe billing integration — Checkout Sessions, Billing Portal, and webhook
+  event handling at `POST /v1/webhooks/stripe` (`checkout.session.completed`,
+  `customer.subscription.updated`, `customer.subscription.deleted`,
+  `invoice.payment_failed`).
+- New plan tiers: Starter ($19/200 pages), Plus ($49/1000), Pro ($149/10000),
+  Ultra ($399/100000), Max ($849/500000); deactivated old business/enterprise
+  tiers.
+- `POST /v1/billing/checkout` — admin-only. Free → paid creates a Stripe
+  Checkout Session; paid → different paid updates the existing subscription in
+  place via Stripe's API (Stripe-managed proration, no duplicate subscriptions).
+- `POST /v1/billing/portal` — admin-only. Opens a Stripe Customer Portal session
+  for self-service subscription management. Honours an optional
+  `STRIPE_PORTAL_CONFIG_ID` env var so the portal config is environment-aware
+  (live vs sandbox `bpc_…`).
+- `POST /v1/billing/cancel` — admin-only. Schedules cancellation at the end of
+  the current billing period via Stripe's `cancel_at_period_end` flag; the
+  customer keeps paid features through what they've already paid for, then
+  auto-downgrades to free when the period ends.
+- Settings → Plans: Upgrade / Switch / Manage Billing buttons; success toast
+  with period-end date on cancellation; usage-cache invalidation on plan change
+  and org switch.
+- Stripe secrets managed via 1Password for both review apps (test keys) and
+  production (live keys); `fly-setup` action validates the live keys are present
+  before deploy.
+- `dev.sh` now auto-injects external secrets (Stripe, Slack, Webflow, Google,
+  Loops) from 1Password via `op inject` when `op` CLI is available.
+- `.env.op` — committed `op://` template for local dev secrets.
+
+### Changed
+
+- Webhook handler tolerates Stripe API-version drift between the destination and
+  the SDK (`webhook.ConstructEventWithOptions` with
+  `IgnoreAPIVersionMismatch: true`), so a Stripe SDK upgrade doesn't break
+  signature verification for events from older webhook destinations.
+- Webhook handlers ACK (return 200) for events about unknown customers or
+  unmapped Stripe price IDs rather than 5xx — Stripe stops retrying for
+  permanent misconfigurations rather than spinning forever.
+- Webhook handlers ignore events for subscriptions that don't match the
+  organisation's stored `stripe_subscription_id` — protects against zombie
+  subscriptions on the same Stripe customer flipping the wrong org's plan.
+
+### Fixed
+
+- Checkout Session creation uses an idempotency key (`checkout:<org>:<price>`),
+  so a double-clicked Upgrade button or proxy retry can't create duplicate
+  Stripe subscriptions.
+- "Switch to Free" now actually cancels the Stripe subscription server-side
+  (previously it only updated the local plan column, leaving the customer billed
+  indefinitely).
+- `BillingCheckout` defensively reconciles with Stripe before creating a new
+  Checkout Session: if Stripe has an active sub for the customer that the local
+  DB doesn't know about (e.g. webhook outage), it adopts the existing sub and
+  takes the in-place update path.
+
+_Add unreleased changes here._
+
 ## [0.33.15] – 2026-04-29
 
 ### Fixed

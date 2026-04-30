@@ -372,29 +372,25 @@
           <section class="settings-section" id="billing">
             <h2 class="settings-section-title" id="payment-methods">Billing</h2>
             <p class="settings-section-subtitle">
-              Update payment methods and view invoices. Admin-only.
+              Manage your subscription and payment methods. Admin-only.
             </p>
 
             <div class="settings-card">
               <div class="settings-row">
                 <div>
-                  <strong>Payment methods</strong>
-                  <div class="settings-muted">
-                    Paddle connection is required to manage billing.
+                  <strong>Payment methods &amp; invoices</strong>
+                  <div class="settings-muted" id="billingStatus">
+                    Upgrade to a paid plan to manage billing.
                   </div>
                 </div>
-                <button class="gnh-button gnh-button-outline" disabled>
+                <button
+                  type="button"
+                  class="gnh-button gnh-button-outline"
+                  id="manageBillingBtn"
+                  disabled
+                >
                   Manage billing
                 </button>
-              </div>
-            </div>
-
-            <div class="settings-card" id="invoices">
-              <div class="settings-row">
-                <div>
-                  <strong>Invoices</strong>
-                  <div class="settings-muted">No invoices available yet.</div>
-                </div>
               </div>
             </div>
           </section>

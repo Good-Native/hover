@@ -12,6 +12,9 @@
 - **Git** - Version control
 - **golangci-lint** (optional) - Code quality checks
   (`brew install golangci-lint`)
+- **1Password CLI** (optional but recommended) — loads external API secrets
+  automatically (`brew install 1password-cli`). Without it, you'll need to add
+  Stripe/Slack/Webflow/Google/Loops keys to `.env.local` manually.
 
 ## Quick Setup
 
