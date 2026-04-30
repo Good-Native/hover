@@ -367,14 +367,14 @@ current delay per domain via `bee.broker.pacer_delay_ms`.
 
 **Source:** `internal/archive/archive.go`, `fly.toml`
 
-| Env var / constant       | Production value     | Default | What it controls                                                          |
-| ------------------------ | -------------------- | ------- | ------------------------------------------------------------------------- |
-| `ARCHIVE_PROVIDER`       | **r2** (`fly.toml`)  | —       | Storage backend (`r2` or `s3`)                                            |
-| `ARCHIVE_BUCKET`         | (`fly.toml`)         | —       | Bucket name for archived HTML                                             |
-| `ARCHIVE_RETENTION_JOBS` | **3** (`fly.toml`)   | —       | Last N terminal jobs (completed/failed/cancelled) kept hot per domain/org |
-| `ARCHIVE_INTERVAL`       | **1m** (`fly.toml`)  | —       | Sweep frequency                                                           |
-| `ARCHIVE_BATCH_SIZE`     | **100** (`fly.toml`) | —       | Archive candidates processed per sweep                                    |
-| `ARCHIVE_CONCURRENCY`    | **5** (`fly.toml`)   | —       | Parallel R2 uploads per sweep                                             |
+| Env var / constant       | Production value     | Default | What it controls                                                                  |
+| ------------------------ | -------------------- | ------- | --------------------------------------------------------------------------------- |
+| `ARCHIVE_PROVIDER`       | **r2** (`fly.toml`)  | —       | Storage backend (`r2` or `s3`)                                                    |
+| `ARCHIVE_BUCKET`         | (`fly.toml`)         | —       | Bucket name for archived HTML                                                     |
+| `ARCHIVE_RETENTION_JOBS` | **3** (`fly.toml`)   | —       | Last N terminal jobs (completed/failed/cancelled/blocked) kept hot per domain/org |
+| `ARCHIVE_INTERVAL`       | **1m** (`fly.toml`)  | —       | Sweep frequency                                                                   |
+| `ARCHIVE_BATCH_SIZE`     | **100** (`fly.toml`) | —       | Archive candidates processed per sweep                                            |
+| `ARCHIVE_CONCURRENCY`    | **5** (`fly.toml`)   | —       | Parallel R2 uploads per sweep                                                     |
 
 ---
 

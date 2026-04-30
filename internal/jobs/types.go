@@ -4,6 +4,8 @@ import (
 	"time"
 )
 
+// New value: also update ValidateStatusTransition + (if terminal)
+// terminalJobStatuses + trigger preserve list + [CRAWL_HANDLING.md] row.
 type JobStatus string
 
 const (

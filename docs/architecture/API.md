@@ -322,7 +322,9 @@ Authorization: Bearer <token>
 
 - `page` - Page number (default: 1)
 - `limit` - Results per page (default: 50, max: 100)
-- `status` - Filter by task status: `pending`, `running`, `completed`, `failed`
+- `status` - Filter by task status: `waiting`, `pending`, `running`,
+  `completed`, `failed`, `skipped` (see [`CRAWL_HANDLING.md`](CRAWL_HANDLING.md)
+  for what each means)
 - `status_code` - Filter by HTTP status code: `200`, `404`, `500`, etc.
 - `min_response_time` - Minimum response time in milliseconds
 - `max_response_time` - Maximum response time in milliseconds

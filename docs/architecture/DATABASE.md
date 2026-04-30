@@ -131,17 +131,37 @@ connections including those from the connection pool.
 
 #### Domains Table
 
-Stores unique domain names with integer primary keys for normalisation.
+Stores unique domain names with integer primary keys for normalisation, plus
+per-domain pacing state and WAF cache flags.
 
 ```sql
 CREATE TABLE domains (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) UNIQUE NOT NULL,
+    crawl_delay_seconds INTEGER,
+    adaptive_delay_seconds INTEGER NOT NULL DEFAULT 0,
+    adaptive_delay_floor_seconds INTEGER NOT NULL DEFAULT 0,
+    waf_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+    waf_vendor TEXT,
+    waf_blocked_at TIMESTAMPTZ,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_domains_name ON domains(name);
+CREATE INDEX idx_domains_waf_blocked ON domains(waf_blocked)
+    WHERE waf_blocked = TRUE;
 ```
+
+| Column                                      | Set by                                         | Used by                                         |
+| ------------------------------------------- | ---------------------------------------------- | ----------------------------------------------- |
+| `crawl_delay_seconds`                       | `validateRootURLAccess` reading `Crawl-delay:` | `DomainPacer` for per-domain throttling         |
+| `adaptive_delay_seconds` / `_floor_seconds` | Pacer's adaptive backoff on 429s               | Pacer dispatch decisions                        |
+| `waf_blocked`                               | `BlockJob` (pre-flight or circuit breaker)     | `setupJobDatabase` cached-flag fast path        |
+| `waf_vendor`                                | `BlockJob`                                     | Customer-facing reason on subsequent jobs       |
+| `waf_blocked_at`                            | `BlockJob`                                     | Cache TTL (24 h) — older verdicts are re-probed |
+
+For how each column drives crawl behaviour see
+[`CRAWL_HANDLING.md`](CRAWL_HANDLING.md).
 
 #### Pages Table
 
@@ -196,11 +216,22 @@ CREATE INDEX idx_jobs_created_at ON jobs(created_at);
 
 **Status Values:**
 
-- `pending` - Job created but not started
-- `running` - Job actively processing tasks
-- `completed` - All tasks finished successfully
-- `cancelled` - Job manually cancelled
-- `failed` - Job failed due to system error
+- `pending` - Job created, no tasks yet
+- `initialising` - Discovery in progress (sitemap parsing)
+- `running` - Tasks dispatching
+- `paused` - Manually paused; tasks not dispatching
+- `completed` - All tasks reached a terminal state
+- `failed` - System / discovery error before or during execution
+- `cancelled` - User cancellation (or auto-cancel from a duplicate-domain new
+  job)
+- `blocked` - WAF detected (pre-flight or mid-crawl); not retried automatically
+- `archived` - Soft-deleted from active views
+
+For the full case → action table (which conditions transition a job to which
+status, and what happens to its tasks), see
+[`CRAWL_HANDLING.md`](CRAWL_HANDLING.md). Allowed transitions are enforced by
+`ValidateStatusTransition` in
+[`internal/jobs/manager.go`](../../internal/jobs/manager.go).
 
 **Task Counters:**
 

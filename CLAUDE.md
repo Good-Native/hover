@@ -110,6 +110,9 @@ For detailed, authoritative rules and onboarding:
 - `CHANGELOG.md`
 - `SECURITY.md`
 - `docs/architecture/ARCHITECTURE.md`
+- `docs/architecture/CRAWL_HANDLING.md` — case → action policy (what we do to a
+  job and its tasks for each domain/page condition). Add a row when you add a
+  case.
 - `docs/architecture/CONFIG_REFERENCE.md`
 - `docs/architecture/DATABASE.md`
 - `docs/architecture/API.md`

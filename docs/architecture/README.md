@@ -8,6 +8,10 @@ System design, database schema, and API specifications for Hover.
 
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System design, components, worker
   pools, and job lifecycle
+- **[CRAWL_HANDLING.md](./CRAWL_HANDLING.md)** - Case → action table: what we do
+  to a job and its tasks for every domain or page condition (WAF walls,
+  robots.txt outcomes, response codes, timeouts, etc.). **Add a row when you add
+  a case.**
 - **[CONFIG_REFERENCE.md](./CONFIG_REFERENCE.md)** - Every configurable dial:
   env vars, hardcoded constants, and their relationships
 - **[DATABASE.md](./DATABASE.md)** - PostgreSQL schema, queries, and performance

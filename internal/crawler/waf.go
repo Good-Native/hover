@@ -41,6 +41,8 @@ const (
 //   - Akamai: Server header AkamaiGHost OR akaalb_/_abck/bm_sz cookie OR
 //     Server-Timing ak_p marker, all on a blocking status
 //   - Generic: tiny body (<500 bytes) on 403 or 202 with no other signal
+//
+// New fingerprint: also add a "WAF wall" row [CRAWL_HANDLING.md].
 func DetectWAF(statusCode int, headers http.Header, bodySample []byte) WAFDetection {
 	if headers == nil {
 		headers = http.Header{}

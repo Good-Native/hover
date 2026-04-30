@@ -119,6 +119,8 @@ See [Roadmap.md](./Roadmap.md) for detailed progress tracking.
 - [API Reference](docs/architecture/API.md)
 - [Configuration Reference](docs/architecture/CONFIG_REFERENCE.md)
 - [Architecture Overview](docs/architecture/ARCHITECTURE.md)
+- [Crawl Handling Cases](docs/architecture/CRAWL_HANDLING.md) — what we do for
+  each domain/page condition
 - [Supabase Realtime](docs/development/SUPABASE-REALTIME.md)
 - [Observability & Tracing](docs/operations/OBSERVABILITY.md)
 - [All Documentation →](docs/)

@@ -1320,6 +1320,7 @@ func (jm *JobManager) CalculateJobProgress(job *Job) float64 {
 	return float64(processedTasks) / float64(job.TotalTasks) * 100.0
 }
 
+// Allowed-edge rationale and case → action mapping: [CRAWL_HANDLING.md].
 func (jm *JobManager) ValidateStatusTransition(from, to JobStatus) error {
 	// Allow restart from terminal states.
 	if to == JobStatusRunning && (from == JobStatusCompleted || from == JobStatusCancelled || from == JobStatusFailed || from == JobStatusBlocked) {

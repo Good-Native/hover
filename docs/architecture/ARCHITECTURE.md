@@ -174,6 +174,9 @@ waiting → pending → running → completed
   counter update on the parent job row and remove the message from the stream's
   pending entries list.
 
+For the case → action mapping ("when X happens to a domain or page, what do we
+do to the job and tasks?") see [`CRAWL_HANDLING.md`](CRAWL_HANDLING.md).
+
 ### Job Counters (Trigger-Maintained)
 
 `jobs.completed_tasks`, `failed_tasks`, `skipped_tasks`, `running_tasks`,
