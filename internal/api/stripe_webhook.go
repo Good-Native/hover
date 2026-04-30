@@ -2,10 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 
+	"github.com/Harvey-AU/hover/internal/db"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	stripe "github.com/stripe/stripe-go/v82"
@@ -95,6 +97,10 @@ func (h *Handler) handleCheckoutSessionCompleted(r *http.Request, event stripe.E
 	if orgID == "" && sess.Customer != nil {
 		id, err := h.DB.GetOrganisationIDByStripeCustomerID(r.Context(), sess.Customer.ID)
 		if err != nil {
+			if errors.Is(err, db.ErrOrganisationNotFound) {
+				logger.Warn().Str("customer_id", sess.Customer.ID).Msg("Unknown Stripe customer — ACKing event")
+				return nil
+			}
 			logger.Error().Err(err).Str("customer_id", sess.Customer.ID).Msg("Cannot resolve organisation from Stripe customer")
 			return fmt.Errorf("resolve organisation: %w", err)
 		}
@@ -142,6 +148,10 @@ func (h *Handler) handleCheckoutSessionCompleted(r *http.Request, event stripe.E
 	priceID := sub.Items.Data[0].Price.ID
 	plan, err := h.DB.GetPlanByStripePriceID(r.Context(), priceID)
 	if err != nil {
+		if errors.Is(err, db.ErrPlanNotFound) {
+			logger.Warn().Str("price_id", priceID).Msg("Stripe price has no matching local plan — ACKing event")
+			return nil
+		}
 		logger.Error().Err(err).Str("price_id", priceID).Msg("Cannot resolve plan from Stripe price")
 		return fmt.Errorf("resolve plan: %w", err)
 	}
@@ -167,6 +177,10 @@ func (h *Handler) handleSubscriptionUpdated(r *http.Request, event stripe.Event,
 
 	orgID, err := h.DB.GetOrganisationIDByStripeCustomerID(r.Context(), sub.Customer.ID)
 	if err != nil {
+		if errors.Is(err, db.ErrOrganisationNotFound) {
+			logger.Warn().Str("customer_id", sub.Customer.ID).Msg("Unknown Stripe customer — ACKing event")
+			return nil
+		}
 		logger.Error().Err(err).Str("customer_id", sub.Customer.ID).Msg("Cannot resolve organisation")
 		return fmt.Errorf("resolve organisation: %w", err)
 	}
@@ -197,6 +211,10 @@ func (h *Handler) handleSubscriptionUpdated(r *http.Request, event stripe.Event,
 	priceID := sub.Items.Data[0].Price.ID
 	plan, err := h.DB.GetPlanByStripePriceID(r.Context(), priceID)
 	if err != nil {
+		if errors.Is(err, db.ErrPlanNotFound) {
+			logger.Warn().Str("price_id", priceID).Msg("Stripe price has no matching local plan — ACKing event")
+			return nil
+		}
 		logger.Error().Err(err).Str("price_id", priceID).Msg("Cannot resolve plan from Stripe price")
 		return fmt.Errorf("resolve plan: %w", err)
 	}
@@ -223,6 +241,10 @@ func (h *Handler) handleSubscriptionDeleted(r *http.Request, event stripe.Event,
 
 	orgID, err := h.DB.GetOrganisationIDByStripeCustomerID(r.Context(), sub.Customer.ID)
 	if err != nil {
+		if errors.Is(err, db.ErrOrganisationNotFound) {
+			logger.Warn().Str("customer_id", sub.Customer.ID).Msg("Unknown Stripe customer — ACKing event")
+			return nil
+		}
 		logger.Error().Err(err).Str("customer_id", sub.Customer.ID).Msg("Cannot resolve organisation")
 		return fmt.Errorf("resolve organisation: %w", err)
 	}

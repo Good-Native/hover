@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -18,6 +19,16 @@ import (
 )
 
 var dbLog = logging.Component("db")
+
+// Sentinel errors for missing resources. Callers can branch on these via
+// errors.Is to distinguish "this thing doesn't exist" from a transient DB
+// failure. Used by Stripe webhook handlers to ACK events Stripe shouldn't
+// retry (unknown customer, unknown price) versus surfacing 5xx for real
+// faults.
+var (
+	ErrOrganisationNotFound = errors.New("organisation not found")
+	ErrPlanNotFound         = errors.New("plan not found")
+)
 
 const (
 	// defaultConnMaxLifetime controls how long a connection can live before

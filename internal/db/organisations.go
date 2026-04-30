@@ -456,6 +456,8 @@ func (db *DB) GetStripeCustomerID(ctx context.Context, organisationID string) (s
 }
 
 // GetOrganisationIDByStripeCustomerID returns the organisation ID for a Stripe customer.
+// Returns ErrOrganisationNotFound (sentinel) when no row matches — callers can
+// use errors.Is to ACK Stripe webhooks for unknown customers without retries.
 func (db *DB) GetOrganisationIDByStripeCustomerID(ctx context.Context, customerID string) (string, error) {
 	var orgID string
 	err := db.client.QueryRowContext(ctx,
@@ -464,7 +466,7 @@ func (db *DB) GetOrganisationIDByStripeCustomerID(ctx context.Context, customerI
 	).Scan(&orgID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", fmt.Errorf("no organisation found for stripe customer %s", customerID)
+			return "", fmt.Errorf("no organisation for stripe customer %s: %w", customerID, ErrOrganisationNotFound)
 		}
 		return "", fmt.Errorf("failed to lookup organisation by stripe customer: %w", err)
 	}
@@ -510,6 +512,8 @@ func (db *DB) GetStripeSubscriptionID(ctx context.Context, organisationID string
 }
 
 // GetPlanByStripePriceID returns the plan with the given Stripe Price ID.
+// Returns ErrPlanNotFound (sentinel) when no row matches — webhook handlers
+// use this to ACK events for prices that aren't configured locally.
 func (db *DB) GetPlanByStripePriceID(ctx context.Context, priceID string) (*Plan, error) {
 	var p Plan
 	err := db.client.QueryRowContext(ctx,
@@ -523,7 +527,7 @@ func (db *DB) GetPlanByStripePriceID(ctx context.Context, priceID string) (*Plan
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no plan found for stripe price %s", priceID)
+			return nil, fmt.Errorf("no plan for stripe price %s: %w", priceID, ErrPlanNotFound)
 		}
 		return nil, fmt.Errorf("failed to lookup plan by stripe price id: %w", err)
 	}
