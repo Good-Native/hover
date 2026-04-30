@@ -5,7 +5,7 @@
  * Surface-agnostic: all render/action functions accept a container element.
  */
 
-import { get, post, put } from "/app/lib/api-client.js";
+import { get, post } from "/app/lib/api-client.js";
 import { showToast as _showToast } from "/app/components/hover-toast.js";
 
 function toast(variant, message) {
@@ -125,11 +125,12 @@ export async function loadPlansAndUsage(container, options = {}) {
               startCheckout(plan.id, actionBtn)
             );
           } else {
-            // Downgrading to free — direct plan update (no payment needed).
+            // Downgrading to free — cancel the Stripe subscription via the
+            // billing backend (so the customer stops being charged).
             actionBtn.textContent = "Switch to Free";
             actionBtn.disabled = false;
             actionBtn.addEventListener("click", () =>
-              switchPlan(plan.id, container, options)
+              switchToFree(container, options)
             );
           }
         }
@@ -143,19 +144,30 @@ export async function loadPlansAndUsage(container, options = {}) {
   }
 }
 
-async function switchPlan(planId, container, options = {}) {
-  if (!planId) return;
-  if (!confirm("Switch to this plan?")) return;
+// Switch to free — cancels the active Stripe subscription via the billing
+// backend so the customer stops being charged. The previous PUT
+// /v1/organisations/plan path silently updated plan_id locally without
+// telling Stripe, leaving subscriptions billing forever.
+async function switchToFree(container, options = {}) {
+  if (
+    !confirm(
+      "Cancel your subscription and switch to the free plan? Your current plan stays active until the end of the billing period."
+    )
+  ) {
+    return;
+  }
 
   try {
-    await put("/v1/organisations/plan", { plan_id: planId });
+    await post("/v1/billing/cancel", {});
     invalidateUsageCache();
-    toast("success", "Plan updated");
+    toast("success", "Subscription cancelled");
     await loadPlansAndUsage(container, options);
     window.GNHQuota?.refresh();
   } catch (err) {
-    console.error("Failed to switch plan:", err);
-    toast("error", "Failed to switch plan");
+    console.error("Failed to cancel subscription:", err);
+    const msg =
+      err?.body?.message || "Failed to cancel subscription — please try again";
+    toast("error", msg);
   }
 }
 

@@ -337,6 +337,7 @@ func (h *Handler) SetupRoutes(mux *http.ServeMux) {
 
 	mux.Handle("/v1/billing/checkout", auth.AuthMiddleware(http.HandlerFunc(h.BillingCheckout)))
 	mux.Handle("/v1/billing/portal", auth.AuthMiddleware(http.HandlerFunc(h.BillingPortal)))
+	mux.Handle("/v1/billing/cancel", auth.AuthMiddleware(http.HandlerFunc(h.BillingCancel)))
 
 	mux.Handle("/v1/integrations/slack", auth.AuthMiddleware(http.HandlerFunc(h.SlackConnectionsHandler)))
 	mux.Handle("/v1/integrations/slack/", auth.AuthMiddleware(http.HandlerFunc(h.SlackConnectionHandler)))

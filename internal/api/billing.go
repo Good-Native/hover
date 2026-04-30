@@ -89,6 +89,41 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get customer ID up-front. Used both for the defensive Stripe-side check
+	// below and for the new-Checkout flow further down.
+	customerID, err := h.DB.GetStripeCustomerID(r.Context(), orgID)
+	if err != nil {
+		InternalError(w, r, fmt.Errorf("failed to fetch stripe customer: %w", err))
+		return
+	}
+
+	// Defensive: if our DB has no subscription but Stripe has an active one for
+	// this customer, adopt it. Catches drift caused by missed webhooks (the
+	// Apr 28 zombie scenario where signature verification failed and DB never
+	// learned about the new sub) — without this, a second checkout click would
+	// create a duplicate live subscription.
+	if existingSubID == "" && customerID != "" {
+		iter := stripesubscription.List(&stripe.SubscriptionListParams{
+			Customer: stripe.String(customerID),
+			Status:   stripe.String("active"),
+		})
+		// Adopt the first active subscription we find. If there are multiple,
+		// the others are leftover zombies — Stripe Customer Portal can clean
+		// those up. We only need one to take the in-place update path.
+		if iter.Next() {
+			adopted := iter.Subscription()
+			log.Warn().Str("org_id", orgID).Str("subscription_id", adopted.ID).Msg("Adopting orphan Stripe subscription not tracked in DB")
+			if err := h.DB.SetStripeSubscriptionID(r.Context(), orgID, adopted.ID); err != nil {
+				log.Error().Err(err).Str("org_id", orgID).Msg("Failed to adopt orphan Stripe subscription")
+			} else {
+				existingSubID = adopted.ID
+			}
+		}
+		if err := iter.Err(); err != nil {
+			log.Warn().Err(err).Str("customer_id", customerID).Msg("Failed to list Stripe subscriptions for orphan check")
+		}
+	}
+
 	baseURL := h.absoluteBaseURL(r)
 	settingsURL := baseURL + "/settings/plans"
 
@@ -135,11 +170,6 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// No existing subscription — first-time Checkout flow.
-	customerID, err := h.DB.GetStripeCustomerID(r.Context(), orgID)
-	if err != nil {
-		InternalError(w, r, fmt.Errorf("failed to fetch stripe customer: %w", err))
-		return
-	}
 	if customerID == "" {
 		org, err := h.DB.GetOrganisation(orgID)
 		if err != nil {
@@ -247,6 +277,86 @@ func (h *Handler) BillingPortal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	WriteSuccess(w, r, map[string]string{"url": sess.URL}, "Portal session created")
+}
+
+// BillingCancel cancels the org's active Stripe subscription and reverts to
+// the free plan. POST /v1/billing/cancel. Admin-only.
+//
+// This is the canonical "Switch to Free" backend — calling Stripe to actually
+// cancel ensures the customer stops being billed. The frontend's PUT
+// /v1/organisations/plan path used to silently update plan_id locally without
+// touching Stripe, which left the subscription billing forever.
+//
+// We update the DB synchronously here so the UI reflects the change without
+// waiting for the customer.subscription.deleted webhook. The webhook handler
+// is idempotent so a second update on arrival is harmless.
+func (h *Handler) BillingCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		MethodNotAllowed(w, r)
+		return
+	}
+
+	if h.StripeSecretKey == "" {
+		log.Error().Msg("Stripe secret key not configured")
+		InternalError(w, r, fmt.Errorf("billing not configured"))
+		return
+	}
+
+	user, orgID, ok := h.GetActiveOrganisationWithUser(w, r)
+	if !ok {
+		return
+	}
+
+	role, err := h.DB.GetOrganisationMemberRole(r.Context(), user.ID, orgID)
+	if err != nil {
+		log.Error().Err(err).Str("org_id", orgID).Str("user_id", user.ID).Msg("Failed to look up organisation member role")
+		InternalError(w, r, fmt.Errorf("failed to verify membership"))
+		return
+	}
+	if role != "admin" {
+		Forbidden(w, r, "Only organisation admins can manage billing")
+		return
+	}
+
+	subID, err := h.DB.GetStripeSubscriptionID(r.Context(), orgID)
+	if err != nil {
+		InternalError(w, r, fmt.Errorf("failed to fetch subscription: %w", err))
+		return
+	}
+
+	// Cancel the Stripe subscription if one exists. If the org somehow has no
+	// subscription (e.g. they've already cancelled, or they were never on a
+	// paid plan), still allow the local state transition to free — this is
+	// idempotent from the caller's perspective.
+	if subID != "" {
+		if _, err := stripesubscription.Cancel(subID, nil); err != nil {
+			log.Error().Err(err).Str("org_id", orgID).Str("subscription_id", subID).Msg("Failed to cancel Stripe subscription")
+			InternalError(w, r, fmt.Errorf("failed to cancel subscription"))
+			return
+		}
+		log.Info().Str("org_id", orgID).Str("subscription_id", subID).Msg("Cancelled Stripe subscription")
+	}
+
+	// Synchronously revert plan + clear sub ID so the frontend reloads with the
+	// new state. handleSubscriptionDeleted webhook will run the same updates
+	// on arrival; both are idempotent.
+	freePlanID, err := h.DB.GetFreePlanID(r.Context())
+	if err != nil {
+		log.Error().Err(err).Str("org_id", orgID).Msg("Failed to fetch free plan id")
+		InternalError(w, r, fmt.Errorf("failed to revert to free plan"))
+		return
+	}
+	if err := h.DB.SetOrganisationPlan(r.Context(), orgID, freePlanID); err != nil {
+		log.Error().Err(err).Str("org_id", orgID).Msg("Failed to revert organisation to free plan")
+		InternalError(w, r, fmt.Errorf("failed to revert to free plan"))
+		return
+	}
+	if err := h.DB.SetStripeSubscriptionID(r.Context(), orgID, ""); err != nil {
+		log.Error().Err(err).Str("org_id", orgID).Msg("Failed to clear Stripe subscription ID")
+		// Not fatal — webhook will retry the clear when it arrives.
+	}
+
+	WriteSuccess(w, r, map[string]any{"success": true}, "Subscription cancelled")
 }
 
 // absoluteBaseURL returns the scheme+host base URL for this request.
