@@ -83,6 +83,6 @@ primary_region = 'syd'
   app = "./start.sh"
 
 [[vm]]
-  memory = '8gb'
+  memory = '4gb'
   cpu_kind = 'performance'
-  cpus = 4
+  cpus = 2

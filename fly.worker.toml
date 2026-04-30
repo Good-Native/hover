@@ -141,4 +141,4 @@ primary_region = 'syd'
 [[vm]]
   memory = '4gb'
   cpu_kind = 'performance'
-  cpus = 2
+  cpus = 1
