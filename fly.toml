@@ -51,7 +51,7 @@ primary_region = 'syd'
   # Stripe Customer Portal Configuration (live). Leave empty until a live-mode
   # bpc_ ID is created in the Stripe dashboard; the code falls back to the
   # account's default portal config when this is unset.
-  STRIPE_PORTAL_CONFIG_ID = ""
+  STRIPE_PORTAL_CONFIG_ID = "bpc_1TRfqpS2RiCh0hZB6SklbEdN"
   OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp-gateway-prod-au-southeast-1.grafana.net/otlp/v1/traces"
   # Cold-storage archival (R2) — defaults in internal/archive/archive.go
   ARCHIVE_PROVIDER = "r2"

@@ -38,7 +38,7 @@ WEBFLOW_CLIENT_ID = "b0a05758d95823fcef73f57e836e55232bf7c5730794222786040800230
 GOOGLE_CLIENT_ID = "721107686014-okh41udv0lkb40ijnsoeh53unj9kn0en.apps.googleusercontent.com"
 # Stripe Customer Portal Configuration (sandbox) — controls which products appear,
 # return URL pattern, etc. The bpc_ ID is non-sensitive so lives in env, not 1Password.
-STRIPE_PORTAL_CONFIG_ID = "bpc_1TRfqpS2RiCh0hZB6SklbEdN"
+STRIPE_PORTAL_CONFIG_ID = "bpc_1TRIpQS2RiCh0hZBmnJjlnDH"
 
 # Cold-storage archival (R2) — credentials via flyctl secrets
 ARCHIVE_PROVIDER = "r2"
