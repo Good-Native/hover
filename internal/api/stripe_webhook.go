@@ -187,11 +187,19 @@ func (h *Handler) handleSubscriptionUpdated(r *http.Request, event stripe.Event,
 
 	// Guard against events for non-current subscriptions. If the customer has
 	// a stale or duplicate sub on the same Stripe customer, an event for the
-	// wrong sub mustn't flip the org's plan. Only act when the event's sub ID
-	// matches what we have stored, or when no sub is stored (first-ever event).
+	// wrong sub mustn't flip the org's plan. When no sub is stored (first
+	// observation, e.g. a missed checkout.session.completed), adopt this
+	// event's sub ID so subsequent zombie events get rejected.
 	storedSubID, err := h.DB.GetStripeSubscriptionID(r.Context(), orgID)
 	if err != nil {
 		return fmt.Errorf("fetch stored subscription id: %w", err)
+	}
+	if storedSubID == "" && sub.ID != "" {
+		if err := h.DB.SetStripeSubscriptionID(r.Context(), orgID, sub.ID); err != nil {
+			return fmt.Errorf("adopt stripe subscription id: %w", err)
+		}
+		logger.Info().Str("org_id", orgID).Str("subscription_id", sub.ID).Msg("Adopted Stripe subscription ID from update event")
+		storedSubID = sub.ID
 	}
 	if storedSubID != "" && storedSubID != sub.ID {
 		logger.Warn().Str("org_id", orgID).Str("event_subscription_id", sub.ID).Str("stored_subscription_id", storedSubID).Msg("Ignoring subscription.updated for non-current subscription")
@@ -251,10 +259,17 @@ func (h *Handler) handleSubscriptionDeleted(r *http.Request, event stripe.Event,
 
 	// Guard against events for non-current subscriptions (same rationale as
 	// handleSubscriptionUpdated). A delete on a zombie sub mustn't downgrade
-	// an org whose current paid sub is healthy.
+	// an org whose current paid sub is healthy. Adopt empty-state with the
+	// event's sub ID for symmetry with the update path.
 	storedSubID, err := h.DB.GetStripeSubscriptionID(r.Context(), orgID)
 	if err != nil {
 		return fmt.Errorf("fetch stored subscription id: %w", err)
+	}
+	if storedSubID == "" && sub.ID != "" {
+		if err := h.DB.SetStripeSubscriptionID(r.Context(), orgID, sub.ID); err != nil {
+			return fmt.Errorf("adopt stripe subscription id: %w", err)
+		}
+		storedSubID = sub.ID
 	}
 	if storedSubID != "" && storedSubID != sub.ID {
 		logger.Warn().Str("org_id", orgID).Str("event_subscription_id", sub.ID).Str("stored_subscription_id", storedSubID).Msg("Ignoring subscription.deleted for non-current subscription")
