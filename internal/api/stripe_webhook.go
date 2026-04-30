@@ -222,17 +222,30 @@ func (h *Handler) handleSubscriptionUpdated(r *http.Request, event stripe.Event,
 		return nil
 	}
 
-	if len(sub.Items.Data) == 0 {
-		logger.WarnContext(r.Context(), "subscription.updated: no line items — skipping plan update", "org_id", orgID)
+	// Re-fetch the subscription from Stripe before reading the price. Stripe
+	// doesn't guarantee webhook delivery order — a stale subscription.updated
+	// can arrive after a newer one. Acting on the payload alone risks
+	// overwriting the plan with an old price; the live Stripe object is the
+	// only authoritative source.
+	fetchParams := &stripe.SubscriptionParams{}
+	fetchParams.Context = r.Context()
+	freshSub, err := stripesubscription.Get(sub.ID, fetchParams)
+	if err != nil {
+		logger.ErrorContext(r.Context(), "Failed to refetch subscription from Stripe", "error", err, "subscription_id", sub.ID)
+		return fmt.Errorf("refetch subscription: %w", err)
+	}
+
+	if freshSub.Items == nil || len(freshSub.Items.Data) == 0 {
+		logger.WarnContext(r.Context(), "subscription.updated: no line items on refreshed subscription — skipping plan update", "org_id", orgID)
 		return nil
 	}
 
-	if sub.Items.Data[0].Price == nil {
-		logger.WarnContext(r.Context(), "subscription.updated: no price on line item — skipping plan update", "org_id", orgID)
+	if freshSub.Items.Data[0].Price == nil {
+		logger.WarnContext(r.Context(), "subscription.updated: no price on refreshed line item — skipping plan update", "org_id", orgID)
 		return nil
 	}
 
-	priceID := sub.Items.Data[0].Price.ID
+	priceID := freshSub.Items.Data[0].Price.ID
 	plan, err := h.DB.GetPlanByStripePriceID(r.Context(), priceID)
 	if err != nil {
 		if errors.Is(err, db.ErrPlanNotFound) {
