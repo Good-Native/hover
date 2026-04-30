@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/rs/zerolog/log"
+	"github.com/Harvey-AU/hover/internal/logging"
 	stripe "github.com/stripe/stripe-go/v82"
 	portalsession "github.com/stripe/stripe-go/v82/billingportal/session"
 	checkoutsession "github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/customer"
 	stripesubscription "github.com/stripe/stripe-go/v82/subscription"
 )
+
+var billingLog = logging.Component("billing")
 
 // BillingCheckout starts a paid-plan transition for the active organisation.
 // POST /v1/billing/checkout
@@ -35,7 +37,7 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.StripeSecretKey == "" {
-		log.Error().Msg("Stripe secret key not configured")
+		billingLog.ErrorContext(r.Context(), "Stripe secret key not configured")
 		InternalError(w, r, fmt.Errorf("billing not configured"))
 		return
 	}
@@ -47,7 +49,7 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 
 	role, err := h.DB.GetOrganisationMemberRole(r.Context(), user.ID, orgID)
 	if err != nil {
-		log.Error().Err(err).Str("org_id", orgID).Str("user_id", user.ID).Msg("Failed to look up organisation member role")
+		billingLog.ErrorContext(r.Context(), "Failed to look up organisation member role", "error", err, "org_id", orgID, "user_id", user.ID)
 		InternalError(w, r, fmt.Errorf("failed to verify membership"))
 		return
 	}
@@ -103,24 +105,29 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 	// learned about the new sub) — without this, a second checkout click would
 	// create a duplicate live subscription.
 	if existingSubID == "" && customerID != "" {
-		iter := stripesubscription.List(&stripe.SubscriptionListParams{
+		listParams := &stripe.SubscriptionListParams{
 			Customer: stripe.String(customerID),
 			Status:   stripe.String("active"),
-		})
+		}
+		listParams.Context = r.Context()
+		iter := stripesubscription.List(listParams)
 		// Adopt the first active subscription we find. If there are multiple,
 		// the others are leftover zombies — Stripe Customer Portal can clean
 		// those up. We only need one to take the in-place update path.
 		if iter.Next() {
 			adopted := iter.Subscription()
-			log.Warn().Str("org_id", orgID).Str("subscription_id", adopted.ID).Msg("Adopting orphan Stripe subscription not tracked in DB")
+			// Recovery path — expected when our DB has fallen behind Stripe.
+			// NoCapture so we don't page Sentry every time a webhook outage
+			// is being healed.
+			billingLog.WarnContext(logging.NoCapture(r.Context()), "Adopting orphan Stripe subscription not tracked in DB", "org_id", orgID, "subscription_id", adopted.ID)
 			if err := h.DB.SetStripeSubscriptionID(r.Context(), orgID, adopted.ID); err != nil {
-				log.Error().Err(err).Str("org_id", orgID).Msg("Failed to adopt orphan Stripe subscription")
+				billingLog.ErrorContext(r.Context(), "Failed to adopt orphan Stripe subscription", "error", err, "org_id", orgID)
 			} else {
 				existingSubID = adopted.ID
 			}
 		}
 		if err := iter.Err(); err != nil {
-			log.Warn().Err(err).Str("customer_id", customerID).Msg("Failed to list Stripe subscriptions for orphan check")
+			billingLog.WarnContext(r.Context(), "Failed to list Stripe subscriptions for orphan check", "error", err, "customer_id", customerID)
 		}
 	}
 
@@ -130,14 +137,16 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 	if existingSubID != "" {
 		// Paid → different paid: update the existing subscription in place.
 		// Avoids duplicate live subscriptions and gives Stripe-managed proration.
-		sub, err := stripesubscription.Get(existingSubID, nil)
+		fetchParams := &stripe.SubscriptionParams{}
+		fetchParams.Context = r.Context()
+		sub, err := stripesubscription.Get(existingSubID, fetchParams)
 		if err != nil {
-			log.Error().Err(err).Str("subscription_id", existingSubID).Msg("Failed to fetch existing Stripe subscription")
+			billingLog.ErrorContext(r.Context(), "Failed to fetch existing Stripe subscription", "error", err, "subscription_id", existingSubID)
 			InternalError(w, r, fmt.Errorf("failed to fetch subscription"))
 			return
 		}
 		if sub.Items == nil || len(sub.Items.Data) == 0 {
-			log.Error().Str("subscription_id", existingSubID).Msg("Existing subscription has no line items")
+			billingLog.ErrorContext(r.Context(), "Existing subscription has no line items", "subscription_id", existingSubID)
 			InternalError(w, r, fmt.Errorf("subscription has no items"))
 			return
 		}
@@ -154,7 +163,7 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 		// Also clear cancel_at_period_end: an admin who scheduled cancellation
 		// and then picks a different tier is implicitly re-affirming the
 		// subscription, so we shouldn't keep them queued for cancellation.
-		_, err = stripesubscription.Update(existingSubID, &stripe.SubscriptionParams{
+		updateParams := &stripe.SubscriptionParams{
 			Items: []*stripe.SubscriptionItemsParams{
 				{
 					ID:    stripe.String(sub.Items.Data[0].ID),
@@ -162,14 +171,16 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 				},
 			},
 			CancelAtPeriodEnd: stripe.Bool(false),
-		})
+		}
+		updateParams.Context = r.Context()
+		_, err = stripesubscription.Update(existingSubID, updateParams)
 		if err != nil {
-			log.Error().Err(err).Str("org_id", orgID).Str("subscription_id", existingSubID).Msg("Failed to update Stripe subscription")
+			billingLog.ErrorContext(r.Context(), "Failed to update Stripe subscription", "error", err, "org_id", orgID, "subscription_id", existingSubID)
 			InternalError(w, r, fmt.Errorf("failed to update subscription"))
 			return
 		}
 		// customer.subscription.updated webhook will reconcile plan_id in DB.
-		log.Info().Str("org_id", orgID).Str("subscription_id", existingSubID).Str("price_id", stripePriceID).Msg("Updated Stripe subscription to new plan")
+		billingLog.InfoContext(r.Context(), "Updated Stripe subscription to new plan", "org_id", orgID, "subscription_id", existingSubID, "price_id", stripePriceID)
 		WriteSuccess(w, r, map[string]string{"url": settingsURL + "?billing=success"}, "Plan updated")
 		return
 	}
@@ -181,22 +192,24 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 			InternalError(w, r, fmt.Errorf("failed to fetch organisation: %w", err))
 			return
 		}
-		cust, err := customer.New(&stripe.CustomerParams{
+		custParams := &stripe.CustomerParams{
 			Email: stripe.String(user.Email),
 			Name:  stripe.String(org.Name),
 			Metadata: map[string]string{
 				"organisation_id": orgID,
 			},
-		})
+		}
+		custParams.Context = r.Context()
+		cust, err := customer.New(custParams)
 		if err != nil {
-			log.Error().Err(err).Str("org_id", orgID).Msg("Failed to create Stripe customer")
+			billingLog.ErrorContext(r.Context(), "Failed to create Stripe customer", "error", err, "org_id", orgID)
 			InternalError(w, r, fmt.Errorf("failed to create billing customer"))
 			return
 		}
 		customerID = cust.ID
-		log.Info().Str("customer_id", customerID).Str("org_id", orgID).Msg("Created Stripe customer")
+		billingLog.InfoContext(r.Context(), "Created Stripe customer", "customer_id", customerID, "org_id", orgID)
 		if err := h.DB.SetStripeCustomerID(r.Context(), orgID, customerID); err != nil {
-			log.Error().Err(err).Str("org_id", orgID).Msg("Failed to store Stripe customer ID")
+			billingLog.ErrorContext(r.Context(), "Failed to store Stripe customer ID", "error", err, "org_id", orgID)
 			InternalError(w, r, fmt.Errorf("failed to store billing customer"))
 			return
 		}
@@ -222,9 +235,10 @@ func (h *Handler) BillingCheckout(w http.ResponseWriter, r *http.Request) {
 	// is org+price-scoped so legitimate switches to different prices still
 	// create fresh sessions.
 	sessParams.SetIdempotencyKey(fmt.Sprintf("checkout:%s:%s", orgID, stripePriceID))
+	sessParams.Context = r.Context()
 	sess, err := checkoutsession.New(sessParams)
 	if err != nil {
-		log.Error().Err(err).Str("org_id", orgID).Msg("Failed to create Stripe Checkout Session")
+		billingLog.ErrorContext(r.Context(), "Failed to create Stripe Checkout Session", "error", err, "org_id", orgID)
 		InternalError(w, r, fmt.Errorf("failed to create checkout session"))
 		return
 	}
@@ -242,7 +256,7 @@ func (h *Handler) BillingPortal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.StripeSecretKey == "" {
-		log.Error().Msg("Stripe secret key not configured")
+		billingLog.ErrorContext(r.Context(), "Stripe secret key not configured")
 		InternalError(w, r, fmt.Errorf("billing not configured"))
 		return
 	}
@@ -254,7 +268,7 @@ func (h *Handler) BillingPortal(w http.ResponseWriter, r *http.Request) {
 
 	role, err := h.DB.GetOrganisationMemberRole(r.Context(), user.ID, orgID)
 	if err != nil {
-		log.Error().Err(err).Str("org_id", orgID).Str("user_id", user.ID).Msg("Failed to look up organisation member role")
+		billingLog.ErrorContext(r.Context(), "Failed to look up organisation member role", "error", err, "org_id", orgID, "user_id", user.ID)
 		InternalError(w, r, fmt.Errorf("failed to verify membership"))
 		return
 	}
@@ -277,6 +291,7 @@ func (h *Handler) BillingPortal(w http.ResponseWriter, r *http.Request) {
 		Customer:  stripe.String(customerID),
 		ReturnURL: stripe.String(h.absoluteBaseURL(r) + "/settings/plans"),
 	}
+	params.Context = r.Context()
 	// Optional override — when unset, Stripe falls back to the account's
 	// default Customer Portal configuration.
 	if h.StripePortalConfigID != "" {
@@ -284,7 +299,7 @@ func (h *Handler) BillingPortal(w http.ResponseWriter, r *http.Request) {
 	}
 	sess, err := portalsession.New(params)
 	if err != nil {
-		log.Error().Err(err).Str("org_id", orgID).Msg("Failed to create Stripe Portal Session")
+		billingLog.ErrorContext(r.Context(), "Failed to create Stripe Portal Session", "error", err, "org_id", orgID)
 		InternalError(w, r, fmt.Errorf("failed to create portal session"))
 		return
 	}
@@ -315,7 +330,7 @@ func (h *Handler) BillingCancel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.StripeSecretKey == "" {
-		log.Error().Msg("Stripe secret key not configured")
+		billingLog.ErrorContext(r.Context(), "Stripe secret key not configured")
 		InternalError(w, r, fmt.Errorf("billing not configured"))
 		return
 	}
@@ -327,7 +342,7 @@ func (h *Handler) BillingCancel(w http.ResponseWriter, r *http.Request) {
 
 	role, err := h.DB.GetOrganisationMemberRole(r.Context(), user.ID, orgID)
 	if err != nil {
-		log.Error().Err(err).Str("org_id", orgID).Str("user_id", user.ID).Msg("Failed to look up organisation member role")
+		billingLog.ErrorContext(r.Context(), "Failed to look up organisation member role", "error", err, "org_id", orgID, "user_id", user.ID)
 		InternalError(w, r, fmt.Errorf("failed to verify membership"))
 		return
 	}
@@ -348,15 +363,17 @@ func (h *Handler) BillingCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sub, err := stripesubscription.Update(subID, &stripe.SubscriptionParams{
+	cancelParams := &stripe.SubscriptionParams{
 		CancelAtPeriodEnd: stripe.Bool(true),
-	})
+	}
+	cancelParams.Context = r.Context()
+	sub, err := stripesubscription.Update(subID, cancelParams)
 	if err != nil {
-		log.Error().Err(err).Str("org_id", orgID).Str("subscription_id", subID).Msg("Failed to schedule subscription cancellation")
+		billingLog.ErrorContext(r.Context(), "Failed to schedule subscription cancellation", "error", err, "org_id", orgID, "subscription_id", subID)
 		InternalError(w, r, fmt.Errorf("failed to cancel subscription"))
 		return
 	}
-	log.Info().Str("org_id", orgID).Str("subscription_id", subID).Msg("Scheduled Stripe subscription cancellation at period end")
+	billingLog.InfoContext(r.Context(), "Scheduled Stripe subscription cancellation at period end", "org_id", orgID, "subscription_id", subID)
 
 	// Pull period_end from the first line item — Stripe v82 moved it from the
 	// subscription itself onto each item.
