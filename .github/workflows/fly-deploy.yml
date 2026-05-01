@@ -167,11 +167,15 @@ jobs:
       - name: Release analysis app
         env:
           IMAGE: ${{ needs.build-analysis.outputs.image }}
+          IMAGE_LABEL: deployment-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           flyctl deploy --image "$IMAGE" \
             --config fly.analysis.toml \
             --app hover-analysis
-          flyctl scale count 1 --process-group analysis -a hover-analysis --yes
+          # Reconcile pre-provisioned pool: reap stale-image machines (the
+          # purpose of the historical `flyctl scale count 1` line — see
+          # PR #369) and top up to 10 stopped clones for fly-autoscaler.
+          bash scripts/fly-reconcile-pool.sh hover-analysis "$IMAGE_LABEL" 10
 
   release-worker:
     name: Release hover-worker
@@ -211,11 +215,69 @@ jobs:
         # both binaries, fly.worker.toml selects the worker entrypoint.
         env:
           IMAGE: ${{ needs.build-shared.outputs.image }}
+          IMAGE_LABEL: deployment-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           flyctl deploy --image "$IMAGE" \
             --config fly.worker.toml \
             --app hover-worker
-          flyctl scale count 1 --process-group worker -a hover-worker --yes
+          # Reconcile pre-provisioned pool: reap stale-image machines (the
+          # purpose of the historical `flyctl scale count 1` line — see
+          # PR #369) and top up to 5 stopped clones for fly-autoscaler.
+          bash scripts/fly-reconcile-pool.sh hover-worker "$IMAGE_LABEL" 5
+
+  # ───────── Autoscaler release ────────────────────────────────────────
+  # fly-autoscaler 0.3.x targets one Fly app per autoscaler instance, so
+  # worker and analysis each get their own app. Both jobs run after their
+  # target's release succeeds — if the target's pool isn't reconciled,
+  # fly-autoscaler has no machines to start/stop. They run in parallel
+  # since the two autoscaler apps are independent.
+  release-autoscaler-worker:
+    name: Release hover-autoscaler-worker
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [release-worker]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/fly-setup
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Sync secrets to autoscaler app
+        run: |
+          flyctl secrets set \
+            --app hover-autoscaler-worker \
+            FAS_API_TOKEN="$FAS_API_TOKEN_WORKER" \
+            FAS_PROMETHEUS_TOKEN="$FAS_PROMETHEUS_TOKEN" \
+            --stage
+
+      - name: Deploy hover-autoscaler-worker
+        run: |
+          flyctl deploy \
+            --config fly.autoscaler-worker.toml \
+            --app hover-autoscaler-worker
+
+  release-autoscaler-analysis:
+    name: Release hover-autoscaler-analysis
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [release-analysis]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/fly-setup
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Sync secrets to autoscaler app
+        run: |
+          flyctl secrets set \
+            --app hover-autoscaler-analysis \
+            FAS_API_TOKEN="$FAS_API_TOKEN_ANALYSIS" \
+            FAS_PROMETHEUS_TOKEN="$FAS_PROMETHEUS_TOKEN" \
+            --stage
+
+      - name: Deploy hover-autoscaler-analysis
+        run: |
+          flyctl deploy \
+            --config fly.autoscaler-analysis.toml \
+            --app hover-autoscaler-analysis
 
   # ───────── Annotation ────────────────────────────────────────────────
   # if: always() so a partial deploy still produces an annotation for
@@ -224,7 +286,14 @@ jobs:
   annotate:
     name: Post deploy annotation to Grafana
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: [release-api, release-analysis, release-worker]
+    needs:
+      [
+        release-api,
+        release-analysis,
+        release-worker,
+        release-autoscaler-worker,
+        release-autoscaler-analysis,
+      ]
     if: always()
     steps:
       - name: Load Grafana annotation secrets

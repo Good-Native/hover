@@ -84,6 +84,18 @@ runs:
           op://Good Native/hover-stripe/STRIPE_WEBHOOK_SECRET
         STRIPE_PUBLISHABLE_KEY:
           op://Good Native/hover-stripe/STRIPE_PUBLISHABLE_KEY
+        # fly-autoscaler runtime tokens. Production uses app-scoped deploy
+        # tokens for least privilege; review apps reuse the org-scoped
+        # FLY_API_TOKEN above (no separate review-app secrets needed).
+        # Provision FAS_API_TOKEN_WORKER/ANALYSIS via:
+        #   fly tokens create deploy -a hover-worker
+        #   fly tokens create deploy -a hover-analysis
+        # FAS_PROMETHEUS_TOKEN via:
+        #   fly tokens create readonly
+        FAS_API_TOKEN_WORKER: op://Good Native/hover-fly/FAS_API_TOKEN_WORKER
+        FAS_API_TOKEN_ANALYSIS:
+          op://Good Native/hover-fly/FAS_API_TOKEN_ANALYSIS
+        FAS_PROMETHEUS_TOKEN: op://Good Native/hover-fly/FAS_PROMETHEUS_TOKEN
 
     - uses: superfly/flyctl-actions/setup-flyctl@63da3ecc5e2793b98a3f2519b3d75d4f4c11cec2 # pinned
 

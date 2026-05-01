@@ -125,6 +125,15 @@ primary_region = 'syd'
 [deploy]
   strategy = "immediate"
 
+# Fly's managed Prometheus scrapes every machine that declares this block.
+# bee_broker_* + bee_worker_* metrics from the OTel exporter at :9464 land
+# in https://api.fly.io/prometheus/personal so fly-autoscaler can read them
+# without Grafana Cloud Basic-Auth gymnastics. Alloy's separate push to
+# Grafana Cloud is unaffected.
+[metrics]
+  port = 9464
+  path = "/metrics"
+
 [processes]
   # Launch via start.sh so the Alloy metrics sidecar runs alongside the
   # worker binary. Running ./worker directly skips Alloy, which silently
