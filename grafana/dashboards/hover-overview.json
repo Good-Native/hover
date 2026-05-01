@@ -3745,6 +3745,60 @@
           }
         }
       },
+      "panel-38": {
+        "kind": "Panel",
+        "spec": {
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "hidden": false,
+                    "query": {
+                      "datasource": {
+                        "name": "efkqze36wurr4a"
+                      },
+                      "group": "prometheus",
+                      "kind": "DataQuery",
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum by (app) (rate(fly_instance_cpu{mode=\"user\"}[5m]))",
+                        "fromExploreMetrics": true,
+                        "instant": true,
+                        "interval": "",
+                        "legendFormat": "{{app}}",
+                        "range": true
+                      },
+                      "version": "v0"
+                    },
+                    "refId": "fly_instance_cpu-by-app"
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "description": "",
+          "id": 38,
+          "links": [],
+          "title": "Fly CPU %",
+          "vizConfig": {
+            "group": "timeseries",
+            "kind": "VizConfig",
+            "spec": {
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              },
+              "options": {}
+            },
+            "version": ""
+          }
+        }
+      },
       "panel-4": {
         "kind": "Panel",
         "spec": {
@@ -4893,6 +4947,19 @@
               "width": 12,
               "x": 12,
               "y": 128
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-38"
+              },
+              "height": 8,
+              "width": 12,
+              "x": 0,
+              "y": 136
             }
           }
         ]
