@@ -66,8 +66,20 @@ fi
 # rather than full image name so registry-host changes don't trip false
 # positives. fly-autoscaler-managed clones inherit the parent's image, so
 # they're identified by the same label.
+#
+# Safety guard: if zero machines currently report the target IMAGE_LABEL,
+# something is off (caller passed wrong label, Fly API hasn't yet caught
+# up). Aborting beats wiping the entire pool.
+TARGET_MATCH_COUNT=$(echo "$MACHINES_JSON" \
+  | jq -r --arg label "$IMAGE_LABEL" '[.[] | select((.config.image // "") | endswith(":" + $label))] | length')
+if [ "$TARGET_MATCH_COUNT" -eq 0 ]; then
+  echo "❌ No machine on $APP currently reports image label $IMAGE_LABEL — aborting before we destroy the running pool." >&2
+  flyctl machines list -a "$APP" >&2 || true
+  exit 1
+fi
+
 STALE_IDS=$(echo "$MACHINES_JSON" \
-  | jq -r --arg label "$IMAGE_LABEL" '.[] | select(.config.image | endswith(":" + $label) | not) | .id')
+  | jq -r --arg label "$IMAGE_LABEL" '.[] | select((.config.image // "") | endswith(":" + $label) | not) | .id')
 
 if [ -n "$STALE_IDS" ]; then
   echo "🗑  Destroying stale-image machines:"
@@ -90,10 +102,12 @@ fi
 # when the app has no [http_service] health check. Poll for up to 60s so
 # we don't race the launch.
 RUNNING_ID=""
+SOURCE_REGION=""
 for attempt in $(seq 1 12); do
   MACHINES_JSON=$(flyctl machines list -a "$APP" --json)
   RUNNING_ID=$(echo "$MACHINES_JSON" | jq -r 'first(.[] | select(.state == "started") | .id) // empty')
   if [ -n "$RUNNING_ID" ]; then
+    SOURCE_REGION=$(echo "$MACHINES_JSON" | jq -r --arg id "$RUNNING_ID" 'first(.[] | select(.id == $id) | .region) // empty')
     break
   fi
   echo "⏳ No started machine yet (attempt $attempt/12) — waiting 5s..."
@@ -103,6 +117,10 @@ done
 if [ -z "$RUNNING_ID" ]; then
   echo "❌ No started machine found on $APP after 60s — cannot clone pool. Did the deploy succeed?" >&2
   flyctl machines list -a "$APP" >&2 || true
+  exit 1
+fi
+if [ -z "$SOURCE_REGION" ]; then
+  echo "❌ Could not determine region of source machine $RUNNING_ID." >&2
   exit 1
 fi
 
@@ -125,13 +143,14 @@ for i in $(seq 1 "$NEEDED"); do
   for clone_attempt in 1 2 3; do
     echo "  Clone $i/$NEEDED (attempt $clone_attempt/3)..."
     BEFORE_IDS=$(flyctl machines list -a "$APP" --json | jq -r '.[].id' | sort)
-    if flyctl machine clone "$RUNNING_ID" -a "$APP" --region syd; then
+    if flyctl machine clone "$RUNNING_ID" -a "$APP" --region "$SOURCE_REGION"; then
       AFTER_IDS=$(flyctl machines list -a "$APP" --json | jq -r '.[].id' | sort)
       CLONE_ID=$(comm -13 <(echo "$BEFORE_IDS") <(echo "$AFTER_IDS") | head -n1)
       if [ -n "$CLONE_ID" ]; then
         break
       fi
-      echo "  ⚠️  Clone command succeeded but no new machine appeared — retrying..." >&2
+      echo "  ⚠️  Clone command succeeded but no new machine appeared — retrying after 3s..." >&2
+      sleep 3
     else
       echo "  ⚠️  Clone command failed (likely transient Fly error) — retrying after 10s..." >&2
       sleep 10
