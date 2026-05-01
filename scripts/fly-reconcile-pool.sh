@@ -71,7 +71,7 @@ fi
 # something is off (caller passed wrong label, Fly API hasn't yet caught
 # up). Aborting beats wiping the entire pool.
 TARGET_MATCH_COUNT=$(echo "$MACHINES_JSON" \
-  | jq -r --arg label "$IMAGE_LABEL" '[.[] | select((.config.image // "") | endswith(":" + $label))] | length')
+  | jq -r --arg label "$IMAGE_LABEL" '[.[] | select(.state != "destroyed" and .state != "destroying") | select((.config.image // "") | endswith(":" + $label))] | length')
 if [ "$TARGET_MATCH_COUNT" -eq 0 ]; then
   echo "❌ No machine on $APP currently reports image label $IMAGE_LABEL — aborting before we destroy the running pool." >&2
   flyctl machines list -a "$APP" >&2 || true
@@ -79,7 +79,7 @@ if [ "$TARGET_MATCH_COUNT" -eq 0 ]; then
 fi
 
 STALE_IDS=$(echo "$MACHINES_JSON" \
-  | jq -r --arg label "$IMAGE_LABEL" '.[] | select((.config.image // "") | endswith(":" + $label) | not) | .id')
+  | jq -r --arg label "$IMAGE_LABEL" '.[] | select(.state != "destroyed" and .state != "destroying") | select((.config.image // "") | endswith(":" + $label) | not) | .id')
 
 if [ -n "$STALE_IDS" ]; then
   echo "🗑  Destroying stale-image machines:"
