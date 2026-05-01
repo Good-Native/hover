@@ -57,6 +57,13 @@ primary_region = "syd"
 [deploy]
   strategy = "immediate"
 
+# Expose the OTel Prometheus exporter to Fly's managed Prometheus so the
+# per-PR autoscaler (hover-autoscaler-analysis-pr-N) can read lighthouse
+# backlog without needing Grafana Cloud Basic-Auth credentials.
+[metrics]
+  port = 9464
+  path = "/metrics"
+
 # Keep the machine restarting after crashes — see fly.analysis.toml for
 # the rationale.
 [[restart]]

@@ -1,0 +1,42 @@
+# fly.autoscaler-analysis.toml — fly-autoscaler instance scaling hover-analysis.
+#
+# Mirror of fly.autoscaler-worker.toml; see that file for the auth model and
+# mode rationale. Pool ceiling is 10 (vs 5 for worker) because lighthouse
+# audits are the bottleneck during large crawls — see the merge-gate notes.
+
+app = "hover-autoscaler-analysis"
+primary_region = "syd"
+
+[build]
+  image = "flyio/fly-autoscaler:0.3.1"
+
+[env]
+  FAS_APP_NAME = "hover-analysis"
+  FAS_REGIONS = "syd"
+  FAS_INTERVAL = "60s"
+
+  FAS_PROMETHEUS_ADDRESS = "https://api.fly.io/prometheus/personal"
+  FAS_PROMETHEUS_METRIC_NAME = "lighthouse_backlog"
+  # The broker probe only runs in the worker (cmd/worker/main.go), so the
+  # metric is emitted with app=hover-worker. We're scaling hover-analysis
+  # based on metrics emitted by hover-worker — that's intentional, and the
+  # filter must match the emitter, not the target.
+  FAS_PROMETHEUS_QUERY = "sum(bee_broker_stream_length{app=\"hover-worker\",stream_type=\"lighthouse\"})"
+
+  # 25 lighthouse tasks per machine before a scale-up trigger. Cap at 10.
+  # Sized off observed audit durations (p50 ~30s, p90 ~65s) so a single
+  # machine drains ~25 tasks in roughly 12-15 minutes — adding capacity
+  # past that keeps user-perceived wait inside that band.
+  FAS_STARTED_MACHINE_COUNT = "max(1, min(10, ceil(lighthouse_backlog / 25)))"
+
+[metrics]
+  port = 9090
+  path = "/metrics"
+
+[[restart]]
+  policy = "always"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

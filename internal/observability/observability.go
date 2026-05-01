@@ -128,12 +128,13 @@ var (
 	fdLimitGauge    metric.Int64Gauge
 	fdPressureGauge metric.Float64Gauge
 
-	brokerStreamLengthGauge    metric.Int64Gauge
-	brokerScheduledDepthGauge  metric.Int64Gauge
-	brokerConsumerPendingGauge metric.Int64Gauge
-	brokerOutboxBacklogGauge   metric.Int64Gauge
-	brokerOutboxAgeGauge       metric.Float64Gauge
-	brokerRedisPingHistogram   metric.Float64Histogram
+	brokerStreamLengthGauge         metric.Int64Gauge
+	brokerScheduledDepthGauge       metric.Int64Gauge
+	brokerConsumerPendingGauge      metric.Int64Gauge
+	brokerUnclampedScaleTargetGauge metric.Float64Gauge
+	brokerOutboxBacklogGauge        metric.Int64Gauge
+	brokerOutboxAgeGauge            metric.Float64Gauge
+	brokerRedisPingHistogram        metric.Float64Histogram
 
 	brokerDispatchCounter    metric.Int64Counter
 	brokerOutboxSweepCounter metric.Int64Counter
@@ -988,6 +989,14 @@ func initBrokerInstruments(meterProvider *sdkmetric.MeterProvider) error {
 		return err
 	}
 
+	brokerUnclampedScaleTargetGauge, err = meter.Float64Gauge(
+		"bee.broker.unclamped_scale_target",
+		metric.WithDescription("Desired machine count for this stream type before fly-autoscaler MAX clamp; saturation alert fires when this exceeds MAX"),
+	)
+	if err != nil {
+		return err
+	}
+
 	brokerOutboxBacklogGauge, err = meter.Int64Gauge(
 		"bee.broker.outbox_backlog",
 		metric.WithDescription("Rows currently in task_outbox awaiting dispatch"),
@@ -1113,23 +1122,73 @@ func initBrokerInstruments(meterProvider *sdkmetric.MeterProvider) error {
 
 // Pre-aggregated across active jobs; the per-job job.id label was dropped
 // for Mimir cardinality and dashboards already used sum(...).
+//
+// Worker covers the crawl stream (XLEN), schedule ZSET (ZCARD), and worker
+// consumer-group pending. Lighthouse covers only the lighthouse stream and
+// its consumer-group pending — there is no lighthouse ZSET.
 type BrokerStreamStats struct {
-	StreamLength   int64
-	ScheduledDepth int64
-	Pending        int64
+	WorkerStreamLength     int64
+	WorkerScheduledDepth   int64
+	WorkerPending          int64
+	LighthouseStreamLength int64
+	LighthousePending      int64
 }
+
+// fly-autoscaler thresholds. Kept in code so the unclamped_scale_target
+// gauge can be derived from the same backlog signal the autoscaler uses,
+// and a Grafana saturation alert can compare it against MAX.
+//
+// Worker autoscaling is plumbed but effectively dormant — workers are
+// I/O-bound and per-job concurrency is bounded by GNH_MAX_WORKERS, so
+// horizontal worker scaling doesn't help. The divisor here mirrors the
+// fly-autoscaler config (fly.autoscaler-worker.toml) so the saturation
+// gauge stays consistent with what the autoscaler is actually doing.
+const (
+	scaleTargetWorkerTasksPerMachine     = 100000
+	scaleTargetLighthouseTasksPerMachine = 25
+)
+
+var (
+	streamTypeWorker     = attribute.String("stream_type", "worker")
+	streamTypeLighthouse = attribute.String("stream_type", "lighthouse")
+)
 
 // Per-job drill-down lives on traces/logs (which carry job_id), not metrics.
 func RecordBrokerStreamStats(ctx context.Context, s BrokerStreamStats) {
+	workerOpt := metric.WithAttributes(streamTypeWorker)
+	lighthouseOpt := metric.WithAttributes(streamTypeLighthouse)
+
 	if brokerStreamLengthGauge != nil {
-		brokerStreamLengthGauge.Record(ctx, s.StreamLength)
+		brokerStreamLengthGauge.Record(ctx, s.WorkerStreamLength, workerOpt)
+		brokerStreamLengthGauge.Record(ctx, s.LighthouseStreamLength, lighthouseOpt)
 	}
 	if brokerScheduledDepthGauge != nil {
-		brokerScheduledDepthGauge.Record(ctx, s.ScheduledDepth)
+		brokerScheduledDepthGauge.Record(ctx, s.WorkerScheduledDepth)
 	}
 	if brokerConsumerPendingGauge != nil {
-		brokerConsumerPendingGauge.Record(ctx, s.Pending)
+		brokerConsumerPendingGauge.Record(ctx, s.WorkerPending, workerOpt)
+		brokerConsumerPendingGauge.Record(ctx, s.LighthousePending, lighthouseOpt)
 	}
+	if brokerUnclampedScaleTargetGauge != nil {
+		workerBacklog := s.WorkerStreamLength + s.WorkerScheduledDepth
+		lighthouseBacklog := s.LighthouseStreamLength
+		brokerUnclampedScaleTargetGauge.Record(ctx, ceilDiv(workerBacklog, scaleTargetWorkerTasksPerMachine), workerOpt)
+		brokerUnclampedScaleTargetGauge.Record(ctx, ceilDiv(lighthouseBacklog, scaleTargetLighthouseTasksPerMachine), lighthouseOpt)
+	}
+}
+
+// ceilDiv returns ⌈n/d⌉ as a float64 with a floor of 1 — fly-autoscaler's
+// expression has MIN=1, so the unclamped gauge mirrors that lower bound and
+// only the upper-bound saturation against MAX is interesting for alerting.
+func ceilDiv(n, d int64) float64 {
+	if d <= 0 || n <= 0 {
+		return 1
+	}
+	v := (n + d - 1) / d
+	if v < 1 {
+		return 1
+	}
+	return float64(v)
 }
 
 func RecordBrokerOutbox(ctx context.Context, backlog int64, oldestAgeSeconds float64) {

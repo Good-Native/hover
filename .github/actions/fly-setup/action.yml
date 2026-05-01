@@ -84,6 +84,11 @@ runs:
           op://Good Native/hover-stripe/STRIPE_WEBHOOK_SECRET
         STRIPE_PUBLISHABLE_KEY:
           op://Good Native/hover-stripe/STRIPE_PUBLISHABLE_KEY
+        # fly-autoscaler runtime tokens (FAS_API_TOKEN_WORKER, FAS_API_TOKEN_ANALYSIS,
+        # FAS_PROMETHEUS_TOKEN) are loaded inline by the production-only
+        # release-autoscaler-* jobs in fly-deploy.yml — keeping them out of
+        # this shared composite means review-app CI doesn't need the
+        # 1Password fields to exist.
 
     - uses: superfly/flyctl-actions/setup-flyctl@63da3ecc5e2793b98a3f2519b3d75d4f4c11cec2 # pinned
 

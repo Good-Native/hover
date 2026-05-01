@@ -127,43 +127,67 @@ func (p *Probe) probeJobs(ctx context.Context) {
 	}
 
 	// Per-job labels removed to bound Mimir series cardinality.
+	// anySuccess gates publication so a whole-Redis outage produces a
+	// series gap rather than zero readings — otherwise the new
+	// fly-autoscaler reads worker_backlog=0 and falsely scales down.
 	var totals observability.BrokerStreamStats
+	anySuccess := false
 	for _, jobID := range jobIDs {
 		if ctx.Err() != nil {
 			return
 		}
-		streamLen, zDepth, pendingCount, ok := p.probeJob(ctx, jobID)
+		stats, ok := p.probeJob(ctx, jobID)
 		if !ok {
 			continue
 		}
-		totals.StreamLength += streamLen
-		totals.ScheduledDepth += zDepth
-		totals.Pending += pendingCount
+		anySuccess = true
+		totals.WorkerStreamLength += stats.workerStreamLen
+		totals.WorkerScheduledDepth += stats.workerZDepth
+		totals.WorkerPending += stats.workerPending
+		totals.LighthouseStreamLength += stats.lighthouseStreamLen
+		totals.LighthousePending += stats.lighthousePending
+	}
+	if !anySuccess && len(jobIDs) > 0 {
+		return
 	}
 	observability.RecordBrokerStreamStats(ctx, totals)
 }
 
+type jobProbeStats struct {
+	workerStreamLen     int64
+	workerZDepth        int64
+	workerPending       int64
+	lighthouseStreamLen int64
+	lighthousePending   int64
+}
+
 // One pipelined RTT per job. ok=false on non-NOGROUP errors so a Redis
 // outage produces a series gap, not false zeroes.
-func (p *Probe) probeJob(ctx context.Context, jobID string) (streamLen, zDepth, pendingCount int64, ok bool) {
+func (p *Probe) probeJob(ctx context.Context, jobID string) (jobProbeStats, bool) {
 	pipe := p.client.rdb.Pipeline()
-	streamLenCmd := pipe.XLen(ctx, StreamKey(jobID))
+	workerStreamCmd := pipe.XLen(ctx, StreamKey(jobID))
 	zsetCmd := pipe.ZCard(ctx, ScheduleKey(jobID))
-	pendingCmd := pipe.XPending(ctx, StreamKey(jobID), ConsumerGroup(jobID))
+	workerPendingCmd := pipe.XPending(ctx, StreamKey(jobID), ConsumerGroup(jobID))
+	lighthouseStreamCmd := pipe.XLen(ctx, LighthouseStreamKey(jobID))
+	lighthousePendingCmd := pipe.XPending(ctx, LighthouseStreamKey(jobID), LighthouseConsumerGroup(jobID))
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		// NOGROUP is expected before the first dispatch.
+		// NOGROUP is expected before the first dispatch on either stream.
 		if !isNoGroupErr(err) {
 			brokerLog.Debug("broker probe pipeline error", "error", err, "job_id", jobID)
-			return 0, 0, 0, false
+			return jobProbeStats{}, false
 		}
 	}
 
-	streamLen, _ = streamLenCmd.Result()
-	zDepth, _ = zsetCmd.Result()
-
-	if pending, err := pendingCmd.Result(); err == nil && pending != nil {
-		pendingCount = pending.Count
+	var stats jobProbeStats
+	stats.workerStreamLen, _ = workerStreamCmd.Result()
+	stats.workerZDepth, _ = zsetCmd.Result()
+	if pending, err := workerPendingCmd.Result(); err == nil && pending != nil {
+		stats.workerPending = pending.Count
 	}
-	return streamLen, zDepth, pendingCount, true
+	stats.lighthouseStreamLen, _ = lighthouseStreamCmd.Result()
+	if pending, err := lighthousePendingCmd.Result(); err == nil && pending != nil {
+		stats.lighthousePending = pending.Count
+	}
+	return stats, true
 }

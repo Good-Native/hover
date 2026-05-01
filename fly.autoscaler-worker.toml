@@ -1,0 +1,52 @@
+# fly.autoscaler-worker.toml — fly-autoscaler instance scaling hover-worker.
+#
+# fly-autoscaler 0.3.x targets a single Fly app per autoscaler instance, so
+# the worker and analysis apps each get their own autoscaler app. This one
+# starts/stops machines on hover-worker based on the crawl backlog measured
+# by the broker probe.
+#
+# Auth model:
+# - FAS_API_TOKEN — deploy token scoped to hover-worker, lets the autoscaler
+#   call the Machines API. Loaded from 1Password via flyctl secrets in CI.
+# - FAS_PROMETHEUS_TOKEN — read-only token for Fly's managed Prometheus.
+#
+# Mode: FAS_STARTED_MACHINE_COUNT (start/stop pre-provisioned pool). The
+# pool size on hover-worker is the hard cap on horizontal scaling — see
+# the merge-gate notes for pool sizing (5 worker machines).
+
+app = "hover-autoscaler-worker"
+primary_region = "syd"
+
+[build]
+  image = "flyio/fly-autoscaler:0.3.1"
+
+[env]
+  FAS_APP_NAME = "hover-worker"
+  FAS_REGIONS = "syd"
+  FAS_INTERVAL = "60s"
+
+  # Fly's managed Prometheus. Auto-scrapes worker machines via the
+  # [metrics] block in fly.worker.toml. Token is FlyV1 readonly.
+  FAS_PROMETHEUS_ADDRESS = "https://api.fly.io/prometheus/personal"
+  FAS_PROMETHEUS_METRIC_NAME = "worker_backlog"
+  FAS_PROMETHEUS_QUERY = "sum(bee_broker_stream_length{app=\"hover-worker\",stream_type=\"worker\"}) + sum(bee_broker_scheduled_zset_depth{app=\"hover-worker\"})"
+
+  # Worker autoscaling is plumbed but effectively dormant. The crawl
+  # workers are I/O-bound and per-job concurrency is bounded by
+  # GNH_MAX_WORKERS, so adding worker machines doesn't help (and risks
+  # hurting via DB-pool contention). The divisor is set high enough that
+  # natural traffic stays at MIN=1; if a real saturation case emerges, the
+  # plumbing is here to dial it in by lowering the divisor.
+  FAS_STARTED_MACHINE_COUNT = "max(1, min(5, ceil(worker_backlog / 100000)))"
+
+[metrics]
+  port = 9090
+  path = "/metrics"
+
+[[restart]]
+  policy = "always"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
