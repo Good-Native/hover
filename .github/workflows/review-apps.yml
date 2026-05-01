@@ -430,8 +430,11 @@ jobs:
           # Fly's Prometheus query endpoint identically. Production uses
           # app-scoped deploy tokens for least privilege; review apps prefer
           # the org token to avoid token-creation churn per PR.
+          # bee_broker_* metrics come from the worker's broker probe, so
+          # both queries filter by WORKER_APP — we're scaling analysis
+          # based on metrics emitted by worker.
           WORKER_QUERY="sum(bee_broker_stream_length{app=\"${WORKER_APP}\",stream_type=\"worker\"}) + sum(bee_broker_scheduled_zset_depth{app=\"${WORKER_APP}\"})"
-          ANALYSIS_QUERY="sum(bee_broker_stream_length{app=\"${ANALYSIS_APP}\",stream_type=\"lighthouse\"})"
+          ANALYSIS_QUERY="sum(bee_broker_stream_length{app=\"${WORKER_APP}\",stream_type=\"lighthouse\"})"
 
           flyctl secrets set \
             --app "$AUTOSCALER_WORKER_APP" \

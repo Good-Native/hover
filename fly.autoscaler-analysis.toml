@@ -17,7 +17,11 @@ primary_region = "syd"
 
   FAS_PROMETHEUS_ADDRESS = "https://api.fly.io/prometheus/personal"
   FAS_PROMETHEUS_METRIC_NAME = "lighthouse_backlog"
-  FAS_PROMETHEUS_QUERY = "sum(bee_broker_stream_length{app=\"hover-analysis\",stream_type=\"lighthouse\"})"
+  # The broker probe only runs in the worker (cmd/worker/main.go), so the
+  # metric is emitted with app=hover-worker. We're scaling hover-analysis
+  # based on metrics emitted by hover-worker — that's intentional, and the
+  # filter must match the emitter, not the target.
+  FAS_PROMETHEUS_QUERY = "sum(bee_broker_stream_length{app=\"hover-worker\",stream_type=\"lighthouse\"})"
 
   # 150 lighthouse tasks per machine before a scale-up trigger. Cap at 10.
   FAS_STARTED_MACHINE_COUNT = "max(1, min(10, ceil(lighthouse_backlog / 150)))"
