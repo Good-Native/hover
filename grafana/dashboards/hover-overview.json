@@ -95,7 +95,7 @@
           "description": "convert to CPU % (inverted idle rate). Your primary bottleneck signal.",
           "id": 1,
           "links": [],
-          "title": "Fly CPU Busy % [Hover]",
+          "title": "Supabase CPU Busy % [Hover]",
           "vizConfig": {
             "group": "timeseries",
             "kind": "VizConfig",
@@ -4985,10 +4985,10 @@
           "allowCustomValue": true,
           "current": {
             "text": [
-              "staging"
+              "production"
             ],
             "value": [
-              "staging"
+              "production"
             ]
           },
           "definition": "label_values(bee_db_pool_in_use, environment)",
