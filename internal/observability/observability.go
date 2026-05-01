@@ -1145,7 +1145,7 @@ type BrokerStreamStats struct {
 // gauge stays consistent with what the autoscaler is actually doing.
 const (
 	scaleTargetWorkerTasksPerMachine     = 100000
-	scaleTargetLighthouseTasksPerMachine = 150
+	scaleTargetLighthouseTasksPerMachine = 25
 )
 
 var (

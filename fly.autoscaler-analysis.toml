@@ -23,8 +23,11 @@ primary_region = "syd"
   # filter must match the emitter, not the target.
   FAS_PROMETHEUS_QUERY = "sum(bee_broker_stream_length{app=\"hover-worker\",stream_type=\"lighthouse\"})"
 
-  # 150 lighthouse tasks per machine before a scale-up trigger. Cap at 10.
-  FAS_STARTED_MACHINE_COUNT = "max(1, min(10, ceil(lighthouse_backlog / 150)))"
+  # 25 lighthouse tasks per machine before a scale-up trigger. Cap at 10.
+  # Sized off observed audit durations (p50 ~30s, p90 ~65s) so a single
+  # machine drains ~25 tasks in roughly 12-15 minutes — adding capacity
+  # past that keeps user-perceived wait inside that band.
+  FAS_STARTED_MACHINE_COUNT = "max(1, min(10, ceil(lighthouse_backlog / 25)))"
 
 [metrics]
   port = 9090

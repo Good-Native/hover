@@ -1,6 +1,6 @@
 # Configuration Reference
 
-Last reviewed: 2026-04-21
+Last reviewed: 2026-05-01
 
 Every configurable dial in the application — env vars, hardcoded constants, and
 their relationships. Values reflect production unless noted. For the flat
@@ -390,3 +390,49 @@ Background loops that run independently of the worker pool.
 | `schedulerBatchSize`      | 50    | Max schedulers fetched per tick                                |
 | `completionCheckInterval` | 30s   | How often completed jobs are detected and finalised            |
 | `healthCheckInterval`     | 5 min | How often stale job health is checked                          |
+
+---
+
+## Fly autoscaler
+
+**Source:** `fly.autoscaler-worker.toml`, `fly.autoscaler-analysis.toml`,
+`scripts/fly-reconcile-pool.sh`, `.github/workflows/fly-deploy.yml`,
+`.github/workflows/review-apps.yml`
+
+Two `flyio/fly-autoscaler:0.3.1` instances (one per scaled app) poll Fly's
+managed Prometheus and start/stop machines from a pre-provisioned pool. Pool
+sizing is enforced by the release jobs via `fly-reconcile-pool.sh` — the
+reconciler reaps stale-image machines and tops the pool back up to the target
+count after every deploy.
+
+| Dial                                   | Production value | What it controls                                                              |
+| -------------------------------------- | ---------------- | ----------------------------------------------------------------------------- |
+| `FAS_INTERVAL`                         | 60s              | Poll cadence against Fly's managed Prometheus                                 |
+| `FAS_PROMETHEUS_ADDRESS`               | hardcoded        | `https://api.fly.io/prometheus/personal`                                      |
+| Worker pool ceiling                    | **5**            | Top-up target for `hover-worker` (set in workflow)                            |
+| Worker divisor                         | **100,000**      | `ceil(worker_backlog / 100000)` — set high to keep worker autoscaling dormant |
+| Analysis pool ceiling                  | **10**           | Top-up target for `hover-analysis` (set in workflow)                          |
+| Lighthouse divisor                     | **25**           | `ceil(lighthouse_backlog / 25)` — sized off observed audit p50 ~30s           |
+| `scaleTargetWorkerTasksPerMachine`     | 100,000          | Mirrors the worker divisor; powers `bee_broker_unclamped_scale_target`        |
+| `scaleTargetLighthouseTasksPerMachine` | 25               | Mirrors the lighthouse divisor; powers `bee_broker_unclamped_scale_target`    |
+
+The full expression on each app is
+`max(1, min(POOL_CEILING, ceil(BACKLOG / DIVISOR)))`. With `MIN=1` the pool
+always retains a started machine; with the `min(POOL_CEILING, ...)` clamp the
+desired count cannot exceed the pre-provisioned pool size.
+
+Worker autoscaling is plumbed but effectively dormant — workers are I/O-bound
+and per-job concurrency is bounded by the stream-worker pool config above, so
+adding worker machines doesn't help and risks DB-pool contention. The high
+divisor (100,000) keeps natural traffic at `MIN=1`. If a real saturation case
+emerges, lower the divisor in `fly.autoscaler-worker.toml`.
+
+Saturation against the pool ceiling is observable via
+`bee_broker_unclamped_scale_target{stream_type=worker|lighthouse}` — the desired
+count without the `min(POOL_CEILING, ...)` clamp. Alert on
+`max_over_time(...) > POOL_CEILING` to know when to raise the ceiling.
+
+Per-PR review apps run their own pair of autoscalers
+(`hover-autoscaler-worker-pr-N`, `hover-autoscaler-analysis-pr-N`) with the same
+dials. Per-PR target app names and Prometheus queries are staged via
+`flyctl secrets set` in the review-apps workflow's `provision` job.

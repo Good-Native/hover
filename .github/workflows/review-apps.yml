@@ -449,7 +449,7 @@ jobs:
             --app "$AUTOSCALER_ANALYSIS_APP" \
             FAS_APP_NAME="$ANALYSIS_APP" \
             FAS_PROMETHEUS_QUERY="$ANALYSIS_QUERY" \
-            FAS_STARTED_MACHINE_COUNT="max(1, min(10, ceil(lighthouse_backlog / 150)))" \
+            FAS_STARTED_MACHINE_COUNT="max(1, min(10, ceil(lighthouse_backlog / 25)))" \
             FAS_API_TOKEN="$FLY_API_TOKEN" \
             FAS_PROMETHEUS_TOKEN="$FLY_API_TOKEN" \
             --stage
