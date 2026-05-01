@@ -31,11 +31,13 @@ primary_region = "syd"
   FAS_PROMETHEUS_METRIC_NAME = "worker_backlog"
   FAS_PROMETHEUS_QUERY = "sum(bee_broker_stream_length{app=\"hover-worker\",stream_type=\"worker\"}) + sum(bee_broker_scheduled_zset_depth{app=\"hover-worker\"})"
 
-  # Started-machine count (start/stop existing pool, never create new).
-  # min(MAX, ceil(backlog / 600)) caps at the pool size; max(...,1) keeps a
-  # warm worker at idle. fly-autoscaler clamps further to len(pool) so a
-  # malformed expression cannot exceed the pre-provisioned ceiling.
-  FAS_STARTED_MACHINE_COUNT = "max(1, min(5, ceil(worker_backlog / 600)))"
+  # Worker autoscaling is plumbed but effectively dormant. The crawl
+  # workers are I/O-bound and per-job concurrency is bounded by
+  # GNH_MAX_WORKERS, so adding worker machines doesn't help (and risks
+  # hurting via DB-pool contention). The divisor is set high enough that
+  # natural traffic stays at MIN=1; if a real saturation case emerges, the
+  # plumbing is here to dial it in by lowering the divisor.
+  FAS_STARTED_MACHINE_COUNT = "max(1, min(5, ceil(worker_backlog / 100000)))"
 
 [metrics]
   port = 9090

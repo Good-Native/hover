@@ -1137,8 +1137,14 @@ type BrokerStreamStats struct {
 // fly-autoscaler thresholds. Kept in code so the unclamped_scale_target
 // gauge can be derived from the same backlog signal the autoscaler uses,
 // and a Grafana saturation alert can compare it against MAX.
+//
+// Worker autoscaling is plumbed but effectively dormant — workers are
+// I/O-bound and per-job concurrency is bounded by GNH_MAX_WORKERS, so
+// horizontal worker scaling doesn't help. The divisor here mirrors the
+// fly-autoscaler config (fly.autoscaler-worker.toml) so the saturation
+// gauge stays consistent with what the autoscaler is actually doing.
 const (
-	scaleTargetWorkerTasksPerMachine     = 600
+	scaleTargetWorkerTasksPerMachine     = 100000
 	scaleTargetLighthouseTasksPerMachine = 150
 )
 
