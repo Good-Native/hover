@@ -144,13 +144,20 @@ for i in $(seq 1 "$NEEDED"); do
     echo "  Clone $i/$NEEDED (attempt $clone_attempt/3)..."
     BEFORE_IDS=$(flyctl machines list -a "$APP" --json | jq -r '.[].id' | sort)
     if flyctl machine clone "$RUNNING_ID" -a "$APP" --region "$SOURCE_REGION"; then
-      AFTER_IDS=$(flyctl machines list -a "$APP" --json | jq -r '.[].id' | sort)
-      CLONE_ID=$(comm -13 <(echo "$BEFORE_IDS") <(echo "$AFTER_IDS") | head -n1)
-      if [ -n "$CLONE_ID" ]; then
-        break
-      fi
-      echo "  ⚠️  Clone command succeeded but no new machine appeared — retrying after 3s..." >&2
-      sleep 3
+      # Clone command accepted. Poll the machine list for visibility —
+      # never re-run the clone command on this path, since that would
+      # create a duplicate if the API is just slow to surface the new ID.
+      for visibility_attempt in 1 2 3 4 5; do
+        AFTER_IDS=$(flyctl machines list -a "$APP" --json | jq -r '.[].id' | sort)
+        CLONE_ID=$(comm -13 <(echo "$BEFORE_IDS") <(echo "$AFTER_IDS") | head -n1)
+        if [ -n "$CLONE_ID" ]; then
+          break 2
+        fi
+        echo "  ⏳ Clone accepted but the new machine is not visible yet (check $visibility_attempt/5) — waiting 3s..." >&2
+        sleep 3
+      done
+      echo "  ❌ Clone command succeeded but the new machine never appeared — aborting to avoid duplicate cloning." >&2
+      exit 1
     else
       echo "  ⚠️  Clone command failed (likely transient Fly error) — retrying after 10s..." >&2
       sleep 10
