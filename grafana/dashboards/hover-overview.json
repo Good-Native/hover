@@ -95,7 +95,7 @@
           "description": "convert to CPU % (inverted idle rate). Your primary bottleneck signal.",
           "id": 1,
           "links": [],
-          "title": "Supabase CPU Busy % [Hover]",
+          "title": "Supabase CPU Busy %",
           "vizConfig": {
             "group": "timeseries",
             "kind": "VizConfig",
