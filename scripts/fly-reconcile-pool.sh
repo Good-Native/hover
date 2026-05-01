@@ -40,7 +40,27 @@ fi
 
 echo "🔍 Reconciling $APP to pool size $POOL_SIZE on image label $IMAGE_LABEL"
 
-MACHINES_JSON=$(flyctl machines list -a "$APP" --json)
+# Phase 0 — wait for all machines to reach a stable state before checking
+# image labels. `flyctl deploy` with --immediate strategy returns as soon
+# as the config update is accepted; the machine may still be in `replacing`
+# state with its old image label still reported. Without this wait, a
+# stable in-place update gets misclassified as stale and the live machine
+# is destroyed.
+TRANSIENT_STATES_FILTER='select(.state == "replacing" or .state == "starting" or .state == "stopping" or .state == "created")'
+for attempt in $(seq 1 24); do
+  MACHINES_JSON=$(flyctl machines list -a "$APP" --json)
+  TRANSIENT_COUNT=$(echo "$MACHINES_JSON" | jq -r "[.[] | $TRANSIENT_STATES_FILTER] | length")
+  if [ "$TRANSIENT_COUNT" = "0" ]; then
+    break
+  fi
+  echo "⏳ $TRANSIENT_COUNT machine(s) still in transitional state (attempt $attempt/24) — waiting 5s..."
+  sleep 5
+done
+if [ "$TRANSIENT_COUNT" != "0" ]; then
+  echo "❌ $TRANSIENT_COUNT machine(s) still transitioning after 120s — aborting before we destroy a live update." >&2
+  flyctl machines list -a "$APP" >&2 || true
+  exit 1
+fi
 
 # Phase 1 — destroy stale-image machines. Match on image label suffix
 # rather than full image name so registry-host changes don't trip false
