@@ -167,11 +167,17 @@ jobs:
       - name: Release analysis app
         env:
           IMAGE: ${{ needs.build-analysis.outputs.image }}
-          IMAGE_LABEL: deployment-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           flyctl deploy --image "$IMAGE" \
             --config fly.analysis.toml \
             --app hover-analysis
+          # Derive IMAGE_LABEL from the built image tag rather than
+          # github.run_attempt — if this release job is retried, run_attempt
+          # bumps but build-analysis.outputs.image still points to the
+          # prior build's tag. Recomputing IMAGE_LABEL from run_attempt
+          # would cause the reconciler to mistake the just-deployed
+          # machines for stragglers and destroy them.
+          IMAGE_LABEL="${IMAGE##*:}"
           # Reconcile pre-provisioned pool: reap stale-image machines (the
           # purpose of the historical `flyctl scale count 1` line — see
           # PR #369) and top up to 10 stopped clones for fly-autoscaler.
@@ -215,11 +221,13 @@ jobs:
         # both binaries, fly.worker.toml selects the worker entrypoint.
         env:
           IMAGE: ${{ needs.build-shared.outputs.image }}
-          IMAGE_LABEL: deployment-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           flyctl deploy --image "$IMAGE" \
             --config fly.worker.toml \
             --app hover-worker
+          # Derive IMAGE_LABEL from the built image tag rather than
+          # github.run_attempt — see release-analysis for rationale.
+          IMAGE_LABEL="${IMAGE##*:}"
           # Reconcile pre-provisioned pool: reap stale-image machines (the
           # purpose of the historical `flyctl scale count 1` line — see
           # PR #369) and top up to 5 stopped clones for fly-autoscaler.
