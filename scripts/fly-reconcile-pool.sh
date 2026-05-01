@@ -100,7 +100,10 @@ fi
 # --ha=false + immediate strategy on an existing pool can leave every
 # machine in stopped state.
 MACHINES_JSON=$(flyctl machines list -a "$APP" --json)
-CURRENT_COUNT=$(echo "$MACHINES_JSON" | jq -r 'length')
+# Exclude destroy-state machines from the pool count — Phase 1 destroys
+# may still surface briefly as `destroying` here and would otherwise
+# inflate CURRENT_COUNT and skip a needed top-up.
+CURRENT_COUNT=$(echo "$MACHINES_JSON" | jq -r '[.[] | select(.state != "destroyed" and .state != "destroying")] | length')
 STARTED_COUNT=$(echo "$MACHINES_JSON" | jq -r '[.[] | select(.state == "started")] | length')
 
 # Enforce the "at least one started machine" baseline regardless of pool
