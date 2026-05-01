@@ -93,37 +93,13 @@ else
   echo "✅ No stale-image machines to reap."
 fi
 
-# Phase 2 — top up the pool. Pick any running machine as the clone source;
-# fly machine clone copies the source's image + config, so as long as the
-# source is on IMAGE_LABEL (post-Phase 1 it must be), the clone is too.
-#
-# On a brand-new app's first deploy, `flyctl deploy --ha=false` returns as
-# soon as the machine is created — it doesn't wait for the started state
-# when the app has no [http_service] health check. Poll for up to 60s so
-# we don't race the launch.
-RUNNING_ID=""
-SOURCE_REGION=""
-for attempt in $(seq 1 12); do
-  MACHINES_JSON=$(flyctl machines list -a "$APP" --json)
-  RUNNING_ID=$(echo "$MACHINES_JSON" | jq -r 'first(.[] | select(.state == "started") | .id) // empty')
-  if [ -n "$RUNNING_ID" ]; then
-    SOURCE_REGION=$(echo "$MACHINES_JSON" | jq -r --arg id "$RUNNING_ID" 'first(.[] | select(.id == $id) | .region) // empty')
-    break
-  fi
-  echo "⏳ No started machine yet (attempt $attempt/12) — waiting 5s..."
-  sleep 5
-done
-
-if [ -z "$RUNNING_ID" ]; then
-  echo "❌ No started machine found on $APP after 60s — cannot clone pool. Did the deploy succeed?" >&2
-  flyctl machines list -a "$APP" >&2 || true
-  exit 1
-fi
-if [ -z "$SOURCE_REGION" ]; then
-  echo "❌ Could not determine region of source machine $RUNNING_ID." >&2
-  exit 1
-fi
-
+# Phase 2 — top up the pool. If the pool is already at target size we're
+# done; we don't need a clone source. Otherwise pick any non-destroyed
+# machine to clone from. flyctl machine clone works on stopped sources
+# too, so we don't require a "started" machine — a deploy with
+# --ha=false + immediate strategy on an existing pool can leave every
+# machine in stopped state.
+MACHINES_JSON=$(flyctl machines list -a "$APP" --json)
 CURRENT_COUNT=$(echo "$MACHINES_JSON" | jq -r 'length')
 
 if [ "$CURRENT_COUNT" -ge "$POOL_SIZE" ]; then
@@ -131,8 +107,22 @@ if [ "$CURRENT_COUNT" -ge "$POOL_SIZE" ]; then
   exit 0
 fi
 
+# Need to clone — pick any non-destroyed machine as the source. Prefer a
+# started one (faster clone path) but fall back to stopped/created.
+SOURCE_ID=$(echo "$MACHINES_JSON" | jq -r 'first(.[] | select(.state == "started") | .id) // first(.[] | select(.state == "stopped") | .id) // first(.[] | select(.state == "created") | .id) // empty')
+if [ -z "$SOURCE_ID" ]; then
+  echo "❌ No clone source available on $APP — every machine is in a destroyed/destroying state. Did the deploy succeed?" >&2
+  flyctl machines list -a "$APP" >&2 || true
+  exit 1
+fi
+SOURCE_REGION=$(echo "$MACHINES_JSON" | jq -r --arg id "$SOURCE_ID" 'first(.[] | select(.id == $id) | .region) // empty')
+if [ -z "$SOURCE_REGION" ]; then
+  echo "❌ Could not determine region of source machine $SOURCE_ID." >&2
+  exit 1
+fi
+
 NEEDED=$((POOL_SIZE - CURRENT_COUNT))
-echo "➕ Cloning $NEEDED stopped machine(s) from $RUNNING_ID to reach pool size $POOL_SIZE."
+echo "➕ Cloning $NEEDED machine(s) from $SOURCE_ID (region $SOURCE_REGION) to reach pool size $POOL_SIZE."
 
 # flyctl machine clone has no --json flag, so identify the new machine
 # by diffing the machine list before and after each clone. Retry on
@@ -143,7 +133,7 @@ for i in $(seq 1 "$NEEDED"); do
   for clone_attempt in 1 2 3; do
     echo "  Clone $i/$NEEDED (attempt $clone_attempt/3)..."
     BEFORE_IDS=$(flyctl machines list -a "$APP" --json | jq -r '.[].id' | sort)
-    if flyctl machine clone "$RUNNING_ID" -a "$APP" --region "$SOURCE_REGION"; then
+    if flyctl machine clone "$SOURCE_ID" -a "$APP" --region "$SOURCE_REGION"; then
       # Clone command accepted. Poll the machine list for visibility —
       # never re-run the clone command on this path, since that would
       # create a duplicate if the API is just slow to surface the new ID.
