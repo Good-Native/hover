@@ -30253,8 +30253,8 @@
         "spec": {
           "allowCustomValue": true,
           "current": {
-            "text": "fly-prometheus",
-            "value": "efkqze36wurr4a"
+            "text": "grafanacloud-simonsmallchua-prom",
+            "value": "grafanacloud-prom"
           },
           "hide": "dontHide",
           "includeAll": false,
