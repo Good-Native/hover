@@ -176,7 +176,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -296,7 +296,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -416,7 +416,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -536,7 +536,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -711,7 +711,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -906,7 +906,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -1044,7 +1044,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -1224,7 +1224,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -1375,7 +1375,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -1495,7 +1495,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -1595,7 +1595,7 @@
                 "textMode": "auto"
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -1719,7 +1719,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -1835,7 +1835,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -1954,7 +1954,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -2077,7 +2077,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -2196,7 +2196,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -2315,7 +2315,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -2547,7 +2547,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -2666,7 +2666,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -2766,7 +2766,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -2889,7 +2889,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -2989,7 +2989,7 @@
                 "textMode": "auto"
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -3108,7 +3108,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -3230,7 +3230,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -3352,7 +3352,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -3474,7 +3474,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -3622,7 +3622,126 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
+          }
+        }
+      },
+      "panel-37": {
+        "kind": "Panel",
+        "spec": {
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "hidden": false,
+                    "query": {
+                      "datasource": {
+                        "name": "grafanacloud-prom"
+                      },
+                      "group": "prometheus",
+                      "kind": "DataQuery",
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "sum by (stream_type) (bee_broker_stream_length)",
+                        "instant": true,
+                        "legendFormat": "__auto",
+                        "range": true
+                      },
+                      "version": "v0"
+                    },
+                    "refId": "A"
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "description": "",
+          "id": 37,
+          "links": [],
+          "title": "REDIS Stream Metrics",
+          "vizConfig": {
+            "group": "timeseries",
+            "kind": "VizConfig",
+            "spec": {
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.6,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "showValues": false,
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": 0
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              },
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "single",
+                  "sort": "none"
+                }
+              }
+            },
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -3742,7 +3861,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -3846,7 +3965,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -3965,7 +4084,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -4085,7 +4204,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -4205,7 +4324,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -4325,7 +4444,7 @@
                 }
               }
             },
-            "version": "13.1.0-24779284961"
+            "version": "13.1.0-25042293542"
           }
         }
       }
@@ -4762,6 +4881,19 @@
               "x": 0,
               "y": 128
             }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-37"
+              },
+              "height": 8,
+              "width": 12,
+              "x": 12,
+              "y": 128
+            }
           }
         ]
       }
@@ -4806,7 +4938,7 @@
         "1d"
       ],
       "fiscalYearStartMonth": 0,
-      "from": "now-15m",
+      "from": "now-1h",
       "hideTimepicker": false,
       "timezone": "browser",
       "to": "now"
