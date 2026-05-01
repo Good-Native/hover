@@ -241,6 +241,17 @@ jobs:
         with:
           op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
+      - name: Load fly-autoscaler tokens from 1Password
+        # Loaded inline (not in the shared fly-setup composite) so review-app
+        # CI doesn't need these 1Password fields to exist.
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          FAS_API_TOKEN_WORKER: op://Good Native/hover-fly/FAS_API_TOKEN_WORKER
+          FAS_PROMETHEUS_TOKEN: op://Good Native/hover-fly/FAS_PROMETHEUS_TOKEN
+
       - name: Sync secrets to autoscaler app
         run: |
           flyctl secrets set \
@@ -264,6 +275,18 @@ jobs:
       - uses: ./.github/actions/fly-setup
         with:
           op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Load fly-autoscaler tokens from 1Password
+        # Loaded inline (not in the shared fly-setup composite) so review-app
+        # CI doesn't need these 1Password fields to exist.
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          FAS_API_TOKEN_ANALYSIS:
+            op://Good Native/hover-fly/FAS_API_TOKEN_ANALYSIS
+          FAS_PROMETHEUS_TOKEN: op://Good Native/hover-fly/FAS_PROMETHEUS_TOKEN
 
       - name: Sync secrets to autoscaler app
         run: |

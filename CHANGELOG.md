@@ -28,7 +28,32 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Added
+
+- Queue-based autoscaling for `hover-worker` and `hover-analysis` via two
+  `flyio/fly-autoscaler:0.3.1` instances. Each polls Fly's managed Prometheus
+  every 60s and starts/stops a pre-provisioned machine pool (5 worker, 10
+  analysis) based on Redis stream backlog. Replaces the static
+  `flyctl scale count 1` lines on both apps. Pre-provisioning + start/stop mode
+  (rather than create/destroy) preserves graceful shutdowns. Per-PR autoscaler
+  variants deploy + tear down with the rest of the review-app lifecycle.
+- New `bee_broker_unclamped_scale_target{stream_type=worker|lighthouse}` gauge
+  surfacing the autoscaler's desired count before its `MAX` clamp, so a Grafana
+  alert can detect chronic saturation ("we'd want N machines but are capped at
+  the pool size").
+- New `[metrics]` blocks on `fly.worker.toml`, `fly.analysis.toml`, and their
+  review-app variants so Fly's managed Prometheus auto-scrapes the OTel exporter
+  at `:9464`. Existing Alloy → Grafana Cloud push is unchanged.
+
+### Changed
+
+- `internal/broker/probe.go` now pipelines the lighthouse stream's `XLEN` and
+  `XPENDING` alongside the worker stream, so `bee_broker_stream_length` and
+  `bee_broker_consumer_pending` carry a `stream_type` attribute.
+- The two `flyctl scale count 1` lines on `hover-worker` and `hover-analysis`
+  release jobs are replaced with `scripts/fly-reconcile-pool.sh`, which reaps
+  stale-image machines (preserving the original PR #369 purpose) and tops up the
+  pre-provisioned pool to its target size.
 
 ## Full changelog history
 
