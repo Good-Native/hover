@@ -254,6 +254,18 @@ jobs:
 
       - name: Sync secrets to autoscaler app
         run: |
+          # Guard against blank tokens. 1Password's load-secrets-action
+          # fails loudly on missing fields, but an empty-but-present field
+          # would otherwise stage a blank FAS_API_TOKEN and silently break
+          # autoscaler authentication after deploy.
+          if [ -z "$FAS_API_TOKEN_WORKER" ]; then
+            echo "❌ FAS_API_TOKEN_WORKER is empty. Check op://Good Native/hover-fly/FAS_API_TOKEN_WORKER" >&2
+            exit 1
+          fi
+          if [ -z "$FAS_PROMETHEUS_TOKEN" ]; then
+            echo "❌ FAS_PROMETHEUS_TOKEN is empty. Check op://Good Native/hover-fly/FAS_PROMETHEUS_TOKEN" >&2
+            exit 1
+          fi
           flyctl secrets set \
             --app hover-autoscaler-worker \
             FAS_API_TOKEN="$FAS_API_TOKEN_WORKER" \
@@ -290,6 +302,18 @@ jobs:
 
       - name: Sync secrets to autoscaler app
         run: |
+          # Guard against blank tokens. 1Password's load-secrets-action
+          # fails loudly on missing fields, but an empty-but-present field
+          # would otherwise stage a blank FAS_API_TOKEN and silently break
+          # autoscaler authentication after deploy.
+          if [ -z "$FAS_API_TOKEN_ANALYSIS" ]; then
+            echo "❌ FAS_API_TOKEN_ANALYSIS is empty. Check op://Good Native/hover-fly/FAS_API_TOKEN_ANALYSIS" >&2
+            exit 1
+          fi
+          if [ -z "$FAS_PROMETHEUS_TOKEN" ]; then
+            echo "❌ FAS_PROMETHEUS_TOKEN is empty. Check op://Good Native/hover-fly/FAS_PROMETHEUS_TOKEN" >&2
+            exit 1
+          fi
           flyctl secrets set \
             --app hover-autoscaler-analysis \
             FAS_API_TOKEN="$FAS_API_TOKEN_ANALYSIS" \

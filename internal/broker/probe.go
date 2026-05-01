@@ -127,7 +127,11 @@ func (p *Probe) probeJobs(ctx context.Context) {
 	}
 
 	// Per-job labels removed to bound Mimir series cardinality.
+	// anySuccess gates publication so a whole-Redis outage produces a
+	// series gap rather than zero readings — otherwise the new
+	// fly-autoscaler reads worker_backlog=0 and falsely scales down.
 	var totals observability.BrokerStreamStats
+	anySuccess := false
 	for _, jobID := range jobIDs {
 		if ctx.Err() != nil {
 			return
@@ -136,11 +140,15 @@ func (p *Probe) probeJobs(ctx context.Context) {
 		if !ok {
 			continue
 		}
+		anySuccess = true
 		totals.WorkerStreamLength += stats.workerStreamLen
 		totals.WorkerScheduledDepth += stats.workerZDepth
 		totals.WorkerPending += stats.workerPending
 		totals.LighthouseStreamLength += stats.lighthouseStreamLen
 		totals.LighthousePending += stats.lighthousePending
+	}
+	if !anySuccess && len(jobIDs) > 0 {
+		return
 	}
 	observability.RecordBrokerStreamStats(ctx, totals)
 }
