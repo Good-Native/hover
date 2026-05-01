@@ -101,6 +101,22 @@ fi
 # machine in stopped state.
 MACHINES_JSON=$(flyctl machines list -a "$APP" --json)
 CURRENT_COUNT=$(echo "$MACHINES_JSON" | jq -r 'length')
+STARTED_COUNT=$(echo "$MACHINES_JSON" | jq -r '[.[] | select(.state == "started")] | length')
+
+# Enforce the "at least one started machine" baseline regardless of pool
+# size — fly-autoscaler's MIN=1 is supposed to keep one running, but a
+# misconfigured autoscaler or manual intervention can leave the whole pool
+# stopped, breaking the API → dispatcher → worker chain.
+if [ "$STARTED_COUNT" -eq 0 ]; then
+  START_ID=$(echo "$MACHINES_JSON" | jq -r 'first(.[] | select(.state == "stopped") | .id) // empty')
+  if [ -z "$START_ID" ]; then
+    echo "❌ No started or stopped machine available to maintain the running baseline." >&2
+    flyctl machines list -a "$APP" >&2 || true
+    exit 1
+  fi
+  echo "▶️  No started machine — starting $START_ID to maintain baseline."
+  flyctl machine start "$START_ID" -a "$APP"
+fi
 
 if [ "$CURRENT_COUNT" -ge "$POOL_SIZE" ]; then
   echo "✅ Pool already at $CURRENT_COUNT machines (target: $POOL_SIZE) — no top-up needed."
