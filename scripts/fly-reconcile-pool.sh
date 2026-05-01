@@ -116,12 +116,19 @@ fi
 NEEDED=$((POOL_SIZE - CURRENT_COUNT))
 echo "➕ Cloning $NEEDED stopped machine(s) from $RUNNING_ID to reach pool size $POOL_SIZE."
 
+# flyctl machine clone has no --json flag, so identify the new machine
+# by diffing the machine list before and after each clone.
 for i in $(seq 1 "$NEEDED"); do
   echo "  Clone $i/$NEEDED..."
-  CLONE_JSON=$(flyctl machine clone "$RUNNING_ID" -a "$APP" --region syd --json)
-  CLONE_ID=$(echo "$CLONE_JSON" | jq -r '.id')
-  if [ -z "$CLONE_ID" ] || [ "$CLONE_ID" = "null" ]; then
-    echo "  ❌ Clone failed: $CLONE_JSON" >&2
+  BEFORE_IDS=$(flyctl machines list -a "$APP" --json | jq -r '.[].id' | sort)
+  if ! flyctl machine clone "$RUNNING_ID" -a "$APP" --region syd; then
+    echo "  ❌ Clone command failed." >&2
+    exit 1
+  fi
+  AFTER_IDS=$(flyctl machines list -a "$APP" --json | jq -r '.[].id' | sort)
+  CLONE_ID=$(comm -13 <(echo "$BEFORE_IDS") <(echo "$AFTER_IDS") | head -n1)
+  if [ -z "$CLONE_ID" ]; then
+    echo "  ❌ Could not identify cloned machine — no new ID appeared in machine list." >&2
     exit 1
   fi
   flyctl machine stop "$CLONE_ID" -a "$APP"
