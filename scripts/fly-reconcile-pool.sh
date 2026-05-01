@@ -64,13 +64,29 @@ fi
 # Phase 2 — top up the pool. Pick any running machine as the clone source;
 # fly machine clone copies the source's image + config, so as long as the
 # source is on IMAGE_LABEL (post-Phase 1 it must be), the clone is too.
-CURRENT_COUNT=$(echo "$MACHINES_JSON" | jq -r 'length')
-RUNNING_ID=$(echo "$MACHINES_JSON" | jq -r 'first(.[] | select(.state == "started") | .id) // empty')
+#
+# On a brand-new app's first deploy, `flyctl deploy --ha=false` returns as
+# soon as the machine is created — it doesn't wait for the started state
+# when the app has no [http_service] health check. Poll for up to 60s so
+# we don't race the launch.
+RUNNING_ID=""
+for attempt in $(seq 1 12); do
+  MACHINES_JSON=$(flyctl machines list -a "$APP" --json)
+  RUNNING_ID=$(echo "$MACHINES_JSON" | jq -r 'first(.[] | select(.state == "started") | .id) // empty')
+  if [ -n "$RUNNING_ID" ]; then
+    break
+  fi
+  echo "⏳ No started machine yet (attempt $attempt/12) — waiting 5s..."
+  sleep 5
+done
 
 if [ -z "$RUNNING_ID" ]; then
-  echo "❌ No started machine found on $APP — cannot clone pool. Did the deploy succeed?" >&2
+  echo "❌ No started machine found on $APP after 60s — cannot clone pool. Did the deploy succeed?" >&2
+  flyctl machines list -a "$APP" >&2 || true
   exit 1
 fi
+
+CURRENT_COUNT=$(echo "$MACHINES_JSON" | jq -r 'length')
 
 if [ "$CURRENT_COUNT" -ge "$POOL_SIZE" ]; then
   echo "✅ Pool already at $CURRENT_COUNT machines (target: $POOL_SIZE) — no top-up needed."
