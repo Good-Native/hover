@@ -3790,12 +3790,83 @@
             "kind": "VizConfig",
             "spec": {
               "fieldConfig": {
-                "defaults": {},
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 1,
+                    "pointSize": 1,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "always",
+                    "showValues": false,
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": 0
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  }
+                },
                 "overrides": []
               },
-              "options": {}
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "single",
+                  "sort": "none"
+                }
+              }
             },
-            "version": ""
+            "version": "13.1.0-25042293542"
           }
         }
       },
@@ -4525,7 +4596,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-27"
+                "name": "panel-38"
               },
               "height": 8,
               "width": 12,
@@ -4551,7 +4622,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-28"
+                "name": "panel-27"
               },
               "height": 8,
               "width": 12,
@@ -4577,7 +4648,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-2"
+                "name": "panel-28"
               },
               "height": 8,
               "width": 12,
@@ -4603,7 +4674,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-4"
+                "name": "panel-2"
               },
               "height": 8,
               "width": 12,
@@ -4629,7 +4700,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-6"
+                "name": "panel-4"
               },
               "height": 8,
               "width": 12,
@@ -4655,7 +4726,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-8"
+                "name": "panel-6"
               },
               "height": 8,
               "width": 12,
@@ -4681,7 +4752,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-10"
+                "name": "panel-8"
               },
               "height": 8,
               "width": 12,
@@ -4707,7 +4778,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-12"
+                "name": "panel-10"
               },
               "height": 8,
               "width": 12,
@@ -4733,7 +4804,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-14"
+                "name": "panel-12"
               },
               "height": 8,
               "width": 12,
@@ -4759,7 +4830,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-20"
+                "name": "panel-14"
               },
               "height": 8,
               "width": 12,
@@ -4785,7 +4856,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-24"
+                "name": "panel-20"
               },
               "height": 8,
               "width": 12,
@@ -4811,7 +4882,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-23"
+                "name": "panel-24"
               },
               "height": 8,
               "width": 12,
@@ -4837,7 +4908,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-19"
+                "name": "panel-23"
               },
               "height": 8,
               "width": 12,
@@ -4863,7 +4934,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-32"
+                "name": "panel-19"
               },
               "height": 8,
               "width": 12,
@@ -4889,7 +4960,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-34"
+                "name": "panel-32"
               },
               "height": 8,
               "width": 12,
@@ -4915,7 +4986,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-36"
+                "name": "panel-34"
               },
               "height": 8,
               "width": 12,
@@ -4941,7 +5012,7 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-37"
+                "name": "panel-36"
               },
               "height": 8,
               "width": 12,
@@ -4954,11 +5025,11 @@
             "spec": {
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-38"
+                "name": "panel-37"
               },
               "height": 8,
               "width": 12,
-              "x": 0,
+              "x": 12,
               "y": 136
             }
           }
