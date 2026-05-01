@@ -117,18 +117,28 @@ NEEDED=$((POOL_SIZE - CURRENT_COUNT))
 echo "➕ Cloning $NEEDED stopped machine(s) from $RUNNING_ID to reach pool size $POOL_SIZE."
 
 # flyctl machine clone has no --json flag, so identify the new machine
-# by diffing the machine list before and after each clone.
+# by diffing the machine list before and after each clone. Retry on
+# transient Fly platform errors (e.g. "machine is on an unreachable host")
+# which can hit any single clone in a long sequence.
 for i in $(seq 1 "$NEEDED"); do
-  echo "  Clone $i/$NEEDED..."
-  BEFORE_IDS=$(flyctl machines list -a "$APP" --json | jq -r '.[].id' | sort)
-  if ! flyctl machine clone "$RUNNING_ID" -a "$APP" --region syd; then
-    echo "  ❌ Clone command failed." >&2
-    exit 1
-  fi
-  AFTER_IDS=$(flyctl machines list -a "$APP" --json | jq -r '.[].id' | sort)
-  CLONE_ID=$(comm -13 <(echo "$BEFORE_IDS") <(echo "$AFTER_IDS") | head -n1)
+  CLONE_ID=""
+  for clone_attempt in 1 2 3; do
+    echo "  Clone $i/$NEEDED (attempt $clone_attempt/3)..."
+    BEFORE_IDS=$(flyctl machines list -a "$APP" --json | jq -r '.[].id' | sort)
+    if flyctl machine clone "$RUNNING_ID" -a "$APP" --region syd; then
+      AFTER_IDS=$(flyctl machines list -a "$APP" --json | jq -r '.[].id' | sort)
+      CLONE_ID=$(comm -13 <(echo "$BEFORE_IDS") <(echo "$AFTER_IDS") | head -n1)
+      if [ -n "$CLONE_ID" ]; then
+        break
+      fi
+      echo "  ⚠️  Clone command succeeded but no new machine appeared — retrying..." >&2
+    else
+      echo "  ⚠️  Clone command failed (likely transient Fly error) — retrying after 10s..." >&2
+      sleep 10
+    fi
+  done
   if [ -z "$CLONE_ID" ]; then
-    echo "  ❌ Could not identify cloned machine — no new ID appeared in machine list." >&2
+    echo "  ❌ Clone failed after 3 attempts." >&2
     exit 1
   fi
   flyctl machine stop "$CLONE_ID" -a "$APP"
