@@ -4985,10 +4985,10 @@
           "allowCustomValue": true,
           "current": {
             "text": [
-              "production"
+              "staging"
             ],
             "value": [
-              "production"
+              "staging"
             ]
           },
           "definition": "label_values(bee_db_pool_in_use, environment)",
