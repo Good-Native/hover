@@ -23,6 +23,7 @@ func freePort(t *testing.T) string {
 
 func TestStartMetricsServerServesMetrics(t *testing.T) {
 	addr := freePort(t)
+	client := &http.Client{Timeout: 500 * time.Millisecond}
 
 	srv, err := StartMetricsServer(context.Background(), MetricsServerOptions{
 		ServiceName:    "hover-test",
@@ -38,7 +39,7 @@ func TestStartMetricsServerServesMetrics(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	var resp *http.Response
 	for time.Now().Before(deadline) {
-		resp, err = http.Get("http://" + addr + "/metrics")
+		resp, err = client.Get("http://" + addr + "/metrics")
 		if err == nil {
 			break
 		}
@@ -60,6 +61,7 @@ func TestStartMetricsServerServesMetrics(t *testing.T) {
 
 func TestStartMetricsServerPprofGated(t *testing.T) {
 	addr := freePort(t)
+	client := &http.Client{Timeout: 500 * time.Millisecond}
 
 	srv, err := StartMetricsServer(context.Background(), MetricsServerOptions{
 		ServiceName:    "hover-test",
@@ -75,7 +77,7 @@ func TestStartMetricsServerPprofGated(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	var resp *http.Response
 	for time.Now().Before(deadline) {
-		resp, err = http.Get("http://" + addr + "/debug/pprof/")
+		resp, err = client.Get("http://" + addr + "/debug/pprof/")
 		if err == nil {
 			break
 		}
@@ -93,6 +95,7 @@ func TestStartMetricsServerPprofGated(t *testing.T) {
 
 func TestStartMetricsServerPprofEnabled(t *testing.T) {
 	addr := freePort(t)
+	client := &http.Client{Timeout: 500 * time.Millisecond}
 
 	srv, err := StartMetricsServer(context.Background(), MetricsServerOptions{
 		ServiceName:    "hover-test",
@@ -108,7 +111,7 @@ func TestStartMetricsServerPprofEnabled(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	var resp *http.Response
 	for time.Now().Before(deadline) {
-		resp, err = http.Get("http://" + addr + "/debug/pprof/")
+		resp, err = client.Get("http://" + addr + "/debug/pprof/")
 		if err == nil {
 			break
 		}
