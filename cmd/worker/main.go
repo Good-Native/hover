@@ -3,12 +3,8 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
-	"net"
-	"net/http"
-	"net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -25,7 +21,6 @@ import (
 	"github.com/Harvey-AU/hover/internal/logging"
 	"github.com/Harvey-AU/hover/internal/observability"
 	"github.com/Harvey-AU/hover/internal/watchdog"
-	"github.com/getsentry/sentry-go"
 	"github.com/lib/pq"
 )
 
@@ -35,18 +30,15 @@ func main() {
 	appEnv := os.Getenv("APP_ENV")
 
 	// Init before logging.Setup so the sentry slog handler can attach.
-	if dsn := os.Getenv("SENTRY_DSN"); dsn != "" {
-		if err := sentry.Init(sentry.ClientOptions{
-			Dsn:              dsn,
-			Environment:      appEnv,
-			AttachStacktrace: true,
-			BeforeSend:       logging.BeforeSend,
-		}); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to initialise Sentry: %v\n", err)
-		} else {
-			defer sentry.Flush(2 * time.Second)
-		}
+	sentryFlush, err := logging.InitSentry(logging.SentryOptions{
+		DSN:         os.Getenv("SENTRY_DSN"),
+		Environment: appEnv,
+		Process:     "worker",
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to initialise Sentry: %v\n", err)
 	}
+	defer sentryFlush()
 
 	logging.Setup(logging.ParseLevel(os.Getenv("LOG_LEVEL")), appEnv)
 	defer flushAsyncLogs()
@@ -63,13 +55,16 @@ func main() {
 		if metricsAddr == "" {
 			metricsAddr = ":9464"
 		}
-		providers, err := observability.Init(context.Background(), observability.Config{
-			Enabled:        true,
+		// Alloy sidecar scrapes /metrics here to add app/environment labels;
+		// pure OTLP push bypasses the dashboard's app filter. pprof shares the
+		// port (Fly internal network only, no auth guard needed).
+		metricsSrv, err := observability.StartMetricsServer(context.Background(), observability.MetricsServerOptions{
 			ServiceName:    serviceName,
 			Environment:    appEnv,
 			OTLPEndpoint:   strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
 			OTLPHeaders:    observability.ParseOTLPHeaders(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")),
 			MetricsAddress: metricsAddr,
+			EnablePprof:    true,
 		})
 		if err != nil {
 			workerLog.Warn("failed to initialise observability", "error", err)
@@ -77,44 +72,8 @@ func main() {
 			defer func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
-				_ = providers.Shutdown(ctx)
+				metricsSrv.Shutdown(ctx)
 			}()
-
-			// Alloy sidecar scrapes /metrics here to add app/environment labels;
-			// pure OTLP push bypasses the dashboard's app filter. pprof shares the
-			// port (Fly internal network only, no auth guard needed).
-			if providers.MetricsHandler != nil && metricsAddr != "" {
-				mux := http.NewServeMux()
-				mux.Handle("/metrics", providers.MetricsHandler)
-				mux.HandleFunc("/debug/pprof/", pprof.Index)
-				mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-				mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-				mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-				mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-				metricsSrv := &http.Server{
-					Addr:              metricsAddr,
-					Handler:           mux,
-					ReadHeaderTimeout: 5 * time.Second,
-				}
-				metricsListener, err := net.Listen("tcp", metricsAddr)
-				if err != nil {
-					workerLog.Error("metrics server failed to bind", "error", err, "addr", metricsAddr)
-				} else {
-					go func() {
-						workerLog.Info("metrics server listening", "addr", metricsAddr)
-						if err := metricsSrv.Serve(metricsListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-							workerLog.Error("metrics server failed", "error", err)
-						}
-					}()
-					defer func() {
-						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-						defer cancel()
-						if err := metricsSrv.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-							workerLog.Warn("graceful shutdown of metrics server failed", "error", err)
-						}
-					}()
-				}
-			}
 		}
 	}
 
