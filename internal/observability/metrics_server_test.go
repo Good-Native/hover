@@ -91,6 +91,39 @@ func TestStartMetricsServerPprofGated(t *testing.T) {
 	}
 }
 
+func TestStartMetricsServerPprofEnabled(t *testing.T) {
+	addr := freePort(t)
+
+	srv, err := StartMetricsServer(context.Background(), MetricsServerOptions{
+		ServiceName:    "hover-test",
+		Environment:    "test",
+		MetricsAddress: addr,
+		EnablePprof:    true,
+	})
+	if err != nil {
+		t.Fatalf("StartMetricsServer: %v", err)
+	}
+	t.Cleanup(func() { srv.Shutdown(context.Background()) })
+
+	deadline := time.Now().Add(2 * time.Second)
+	var resp *http.Response
+	for time.Now().Before(deadline) {
+		resp, err = http.Get("http://" + addr + "/debug/pprof/")
+		if err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("server never came up: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("pprof should return 200 when EnablePprof=true, got %d", resp.StatusCode)
+	}
+}
+
 func TestStartMetricsServerShutdownIdempotent(t *testing.T) {
 	addr := freePort(t)
 

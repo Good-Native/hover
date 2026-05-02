@@ -15,6 +15,27 @@ func TestInitSentryNoOpWhenDSNEmpty(t *testing.T) {
 	flush() // must not panic
 }
 
+func TestInitSentryWithDSN(t *testing.T) {
+	t.Setenv("FLY_APP_NAME", "hover-pr-372")
+	t.Setenv("FLY_REGION", "syd")
+	t.Setenv("FLY_RELEASE_VERSION", "v999")
+	t.Setenv("FLY_MACHINE_ID", "machine-abc")
+
+	flush, err := InitSentry(SentryOptions{
+		DSN:              "https://public@example.invalid/1",
+		Environment:      "test",
+		Process:          "worker",
+		TracesSampleRate: 0.5,
+	})
+	if err != nil {
+		t.Fatalf("InitSentry: %v", err)
+	}
+	if flush == nil {
+		t.Fatal("flush should never be nil")
+	}
+	flush() // must not panic
+}
+
 func TestDeployReleasePrecedence(t *testing.T) {
 	t.Setenv("FLY_RELEASE_VERSION", "")
 	t.Setenv("FLY_IMAGE_REF", "")
