@@ -29,14 +29,26 @@ func InitSentry(opts SentryOptions) (func(), error) {
 		return flush, nil
 	}
 
+	// Capture deploy-identifying values once so we don't re-read env on every
+	// event. Logged to stderr at startup so Fly logs show which Fly runtime
+	// env vars actually got populated on this machine.
+	appName := strings.TrimSpace(os.Getenv("FLY_APP_NAME"))
+	region := strings.TrimSpace(os.Getenv("FLY_REGION"))
+	release := deployRelease()
+	server := serverName()
+	fmt.Fprintf(os.Stderr,
+		"sentry: init env=%q app=%q region=%q process=%q release=%q server=%q\n",
+		opts.Environment, appName, region, opts.Process, release, server,
+	)
+
 	clientOpts := sentry.ClientOptions{
 		Dsn:              opts.DSN,
 		Environment:      opts.Environment,
-		Release:          deployRelease(),
-		ServerName:       serverName(),
+		Release:          release,
+		ServerName:       server,
 		AttachStacktrace: true,
 		Debug:            opts.Debug,
-		BeforeSend:       BeforeSend,
+		BeforeSend:       wrapBeforeSend(appName, region, opts.Process),
 	}
 	if opts.TracesSampleRate > 0 {
 		clientOpts.TracesSampleRate = opts.TracesSampleRate
@@ -46,19 +58,34 @@ func InitSentry(opts SentryOptions) (func(), error) {
 		return flush, fmt.Errorf("sentry.Init: %w", err)
 	}
 
-	sentry.ConfigureScope(func(scope *sentry.Scope) {
-		if v := strings.TrimSpace(os.Getenv("FLY_APP_NAME")); v != "" {
-			scope.SetTag("app", v)
-		}
-		if v := strings.TrimSpace(os.Getenv("FLY_REGION")); v != "" {
-			scope.SetTag("region", v)
-		}
-		if opts.Process != "" {
-			scope.SetTag("process", opts.Process)
-		}
-	})
-
 	return func() { sentry.Flush(2 * time.Second) }, nil
+}
+
+// wrapBeforeSend stamps deploy-identifying tags directly onto every event
+// before delegating to the existing BeforeSend normalisation. The earlier
+// approach used sentry.ConfigureScope, but staging diagnostics showed scope
+// tags were not reaching events captured via the sentryslog handler — likely
+// a goroutine-local hub interaction. Stamping in BeforeSend is unconditional.
+func wrapBeforeSend(app, region, process string) func(*sentry.Event, *sentry.EventHint) *sentry.Event {
+	return func(event *sentry.Event, hint *sentry.EventHint) *sentry.Event {
+		event = BeforeSend(event, hint)
+		if event == nil {
+			return nil
+		}
+		if event.Tags == nil {
+			event.Tags = make(map[string]string)
+		}
+		if app != "" && event.Tags["app"] == "" {
+			event.Tags["app"] = app
+		}
+		if region != "" && event.Tags["region"] == "" {
+			event.Tags["region"] = region
+		}
+		if process != "" && event.Tags["process"] == "" {
+			event.Tags["process"] = process
+		}
+		return event
+	}
 }
 
 // deployRelease returns the most stable deploy identifier we can read from

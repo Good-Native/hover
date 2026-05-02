@@ -2,7 +2,66 @@ package logging
 
 import (
 	"testing"
+
+	"github.com/getsentry/sentry-go"
 )
+
+func TestWrapBeforeSendStampsTags(t *testing.T) {
+	fn := wrapBeforeSend("hover-pr-372", "syd", "worker")
+
+	event := &sentry.Event{
+		Message: "test",
+		Tags:    map[string]string{"existing": "value"},
+	}
+
+	got := fn(event, nil)
+	if got == nil {
+		t.Fatal("expected non-nil event")
+	}
+	if got.Tags["app"] != "hover-pr-372" {
+		t.Errorf("app = %q, want hover-pr-372", got.Tags["app"])
+	}
+	if got.Tags["region"] != "syd" {
+		t.Errorf("region = %q, want syd", got.Tags["region"])
+	}
+	if got.Tags["process"] != "worker" {
+		t.Errorf("process = %q, want worker", got.Tags["process"])
+	}
+	if got.Tags["existing"] != "value" {
+		t.Errorf("existing tag overwritten: %q", got.Tags["existing"])
+	}
+}
+
+func TestWrapBeforeSendSkipsEmptyValues(t *testing.T) {
+	fn := wrapBeforeSend("", "", "")
+
+	event := &sentry.Event{Message: "test"}
+	got := fn(event, nil)
+	if got == nil {
+		t.Fatal("expected non-nil event")
+	}
+	if _, ok := got.Tags["app"]; ok {
+		t.Error("app tag should not be set when env value is empty")
+	}
+	if _, ok := got.Tags["region"]; ok {
+		t.Error("region tag should not be set when env value is empty")
+	}
+	if _, ok := got.Tags["process"]; ok {
+		t.Error("process tag should not be set when value is empty")
+	}
+}
+
+func TestWrapBeforeSendPreservesNoCaptureDrop(t *testing.T) {
+	fn := wrapBeforeSend("hover-pr-372", "syd", "worker")
+
+	event := &sentry.Event{
+		Message: "expected error",
+		Extra:   map[string]interface{}{"no_capture": true},
+	}
+	if got := fn(event, nil); got != nil {
+		t.Error("wrapBeforeSend should drop no_capture events")
+	}
+}
 
 func TestInitSentryNoOpWhenDSNEmpty(t *testing.T) {
 	flush, err := InitSentry(SentryOptions{DSN: ""})
