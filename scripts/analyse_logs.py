@@ -259,11 +259,13 @@ class LatencyProbe(Probe):
             if isinstance(v, (int, float)):
                 self._record(float(v), ts, line)
                 return
-        # Some loggers stamp `duration` as ns, ms, or string with units. Best-effort:
+        # Bare `duration` follows Go/zerolog convention: integer nanoseconds.
+        # Don't try to infer units from magnitude — sub-millisecond values
+        # would otherwise be recorded as milliseconds and skew percentiles.
+        # Apps emitting milliseconds should use the explicit `*_ms` keys above.
         d = rec.get("duration")
         if isinstance(d, (int, float)):
-            ms = float(d) / 1_000_000 if d > 1_000_000 else float(d)
-            self._record(ms, ts, line)
+            self._record(float(d) / 1_000_000, ts, line)
 
     def report(self) -> dict:
         if not self.values_ms:
@@ -272,8 +274,19 @@ class LatencyProbe(Probe):
         n = len(vs)
 
         def pct(p: float) -> float:
-            i = max(0, min(n - 1, round(p / 100 * (n - 1))))
-            return vs[i]
+            # Linear interpolation between adjacent ranks (Type 7 / "inclusive"),
+            # the same method as `statistics.quantiles(method="inclusive")`.
+            # `round()` previously hit banker's-rounding edge cases (e.g. p50
+            # of [100, 300] returned 100 instead of 200).
+            if n == 1 or p <= 0:
+                return float(vs[0])
+            if p >= 100:
+                return float(vs[-1])
+            rank = p / 100 * (n - 1)
+            lo = int(rank)
+            hi = min(lo + 1, n - 1)
+            frac = rank - lo
+            return float(vs[lo]) + frac * (float(vs[hi]) - float(vs[lo]))
 
         self.slowest.sort(key=lambda x: -x[0])
         slowest = [
