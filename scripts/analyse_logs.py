@@ -18,7 +18,7 @@ import re
 import statistics
 import sys
 import zipfile
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterator
@@ -395,6 +395,9 @@ def _build_probes(extra_keywords: list[str], extra_regexes: list[str]) -> list[P
     return probes
 
 
+_DEDUPE_WINDOW = 50_000
+
+
 def _analyse_app(app_dir: Path, extra_keywords: list[str], extra_regexes: list[str]) -> dict:
     probes = _build_probes(extra_keywords, extra_regexes)
     total_lines = 0
@@ -402,17 +405,22 @@ def _analyse_app(app_dir: Path, extra_keywords: list[str], extra_regexes: list[s
     parsed_records = 0
     first_ts = ""
     last_ts = ""
+    # Bounded sliding-window dedupe: capture overlap is between adjacent
+    # iterations, so a recent-window LRU catches all real duplicates without
+    # unbounded memory growth on long, high-volume runs. Capture-time cursor
+    # filtering already removes most dupes; this is the secondary safety net.
     seen: set[str] = set()
+    seen_order: deque[str] = deque()
 
     for _source, raw_line in iter_lines(app_dir):
         total_lines += 1
-        # Monitor captures `tail -n 400` each iteration, so consecutive captures
-        # overlap heavily. Dedupe on the ANSI-stripped line so probe counts
-        # reflect distinct events rather than capture overlap.
         line = _strip_ansi(raw_line).rstrip()
         if not line or line in seen:
             continue
         seen.add(line)
+        seen_order.append(line)
+        if len(seen_order) > _DEDUPE_WINDOW:
+            seen.discard(seen_order.popleft())
         unique_lines += 1
         rec = _parse_record(line)
         if rec is not None:

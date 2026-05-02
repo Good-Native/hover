@@ -6,8 +6,11 @@ cursor stored at the given path, then updates the cursor to the max timestamp
 seen. Used by `logs.sh monitor` so overlapping `flyctl logs --no-tail` captures
 only persist new lines per iteration.
 
-Lines without a parseable leading timestamp pass through untouched — they're
-typically multi-line stack-trace continuations and are worth preserving.
+Lines without a parseable leading timestamp (typically multi-line stack-trace
+continuations) are emitted only when the most recent timestamped header was
+emitted. That preserves multi-line records when their header survives the
+cursor while preventing stale continuation blocks from re-appearing in
+overlapping `flyctl logs --no-tail` windows.
 """
 
 from __future__ import annotations
