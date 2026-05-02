@@ -27,15 +27,15 @@ USAGE
 }
 
 # Probe a candidate interpreter and confirm it's Python 3+. Echoes nothing on
-# success; non-zero exit means the candidate isn't usable. `python` on some
-# systems is still 2.x, so just `import sys` isn't enough — we explicitly
-# check `sys.version_info[0] >= 3`.
+# success; non-zero exit means the candidate isn't usable.
 _is_python3() {
     "$@" -c "import sys; sys.exit(0 if sys.version_info[0] >= 3 else 1)" \
         >/dev/null 2>&1
 }
 
 # Locate a working Python 3 interpreter shared by search/analyse helpers.
+# `python` on some systems is still 2.x, so just `import sys` isn't enough —
+# we explicitly check `sys.version_info[0] >= 3`.
 resolve_python() {
     if command -v python3 >/dev/null 2>&1 && _is_python3 python3; then
         PYTHON_CMD="python3"
@@ -252,10 +252,11 @@ USAGE
         exit 1
     fi
     if [[ -z "$RUN_ID" ]]; then
-        RUN_ID="$(generate_run_slug)_${SETTINGS_SUFFIX}"
+        RUN_SLUG="$(generate_run_slug)"
     else
-        RUN_ID="${RUN_ID}_${SETTINGS_SUFFIX}"
+        RUN_SLUG="$RUN_ID"
     fi
+    RUN_ID="${RUN_SLUG}_${SETTINGS_SUFFIX}"
 
     ANALYSE_EVERY_SECONDS=$(parse_duration "$ANALYSE_EVERY")
 
@@ -311,28 +312,113 @@ USAGE
         if (( s < 3600 )); then printf "%dm%ds" $((s/60)) $((s%60)); return; fi
         printf "%dh%dm" $((s/3600)) $(( (s%3600)/60 ))
     }
-    ticker() {
-        local plain="$1" styled="$2"
-        if [[ "$USE_TICKER" == "true" ]]; then
-            printf "\r\033[K%s" "$styled"
-        fi
-        echo "[$(iso_ts)] $plain" >> "$LOG_FILE"
-    }
     ticker_done() {
         if [[ "$USE_TICKER" == "true" ]]; then
             printf "\n"
         fi
     }
 
+    # ── Animated ticker ──────────────────────────────────────────────────
+    # The ticker line is redrawn at 5Hz by a background process while the
+    # main loop captures logs. State is shared via a small file the main
+    # loop writes once per iteration; the animator reads it on every redraw
+    # so the spinner, elapsed time, and snapshot countdown all keep ticking
+    # even while flyctl calls are in flight.
+
+    TICKER_STATE_FILE="$RUN_DIR/.ticker_state"
+    TICKER_ANIMATOR_PID=""
+
+    write_ticker_state() {
+        # Single line: iter iter_max start_epoch last_analyse_epoch analyse_every
+        printf '%d %d %d %d %d\n' \
+            "$iteration" "$ITERATIONS" "$start_epoch" "$last_analyse_epoch" "$ANALYSE_EVERY_SECONDS" \
+            > "$TICKER_STATE_FILE"
+    }
+
+    ticker_animator() {
+        local idx=0
+        local frames=(◐ ◓ ◑ ◒)
+        local n=${#frames[@]}
+        local iter_num iter_max s_epoch a_epoch a_every
+        local now elapsed elapsed_fmt iter_styled snap_styled until_snap snap_fmt spin
+        while [[ -f "$TICKER_STATE_FILE" ]]; do
+            if read -r iter_num iter_max s_epoch a_epoch a_every < "$TICKER_STATE_FILE" 2>/dev/null \
+                && [[ -n "${iter_num:-}" ]]; then
+                now=$(date +%s)
+                elapsed=$(( now - s_epoch ))
+                elapsed_fmt=$(fmt_duration $elapsed)
+                if [[ "$iter_max" -gt 0 ]]; then
+                    iter_styled="iter ${C_BOLD}${C_CYAN}${iter_num}${C_RESET}/${iter_max}"
+                else
+                    iter_styled="iter ${C_BOLD}${C_CYAN}${iter_num}${C_RESET}"
+                fi
+                if [[ "$a_every" -gt 0 ]]; then
+                    until_snap=$(( a_every - (now - a_epoch) ))
+                    (( until_snap < 0 )) && until_snap=0
+                    snap_fmt=$(fmt_duration $until_snap)
+                    snap_styled=" ${C_DIM}· next snapshot in ${snap_fmt}${C_RESET}"
+                else
+                    snap_styled=""
+                fi
+                spin="${frames[$idx]}"
+                printf "\r\033[K   ${C_BOLD}${C_CYAN}%s${C_RESET}  %s ${C_DIM}·${C_RESET} elapsed ${C_BOLD}${C_CYAN}%s${C_RESET}%s" \
+                    "$spin" "$iter_styled" "$elapsed_fmt" "$snap_styled"
+            fi
+            idx=$(( (idx + 1) % n ))
+            sleep 0.2
+        done
+    }
+
+    stop_ticker_animator() {
+        if [[ -n "$TICKER_ANIMATOR_PID" ]]; then
+            kill "$TICKER_ANIMATOR_PID" 2>/dev/null || true
+            wait "$TICKER_ANIMATOR_PID" 2>/dev/null || true
+            TICKER_ANIMATOR_PID=""
+        fi
+        rm -f "$TICKER_STATE_FILE"
+    }
+
     STOP_REQUESTED=false
     on_interrupt() {
         STOP_REQUESTED=true
+        stop_ticker_animator
         ticker_done
         emit_styled \
-            "Stop requested — finishing current iteration and writing final report..." \
+            "Stop requested — finishing up..." \
             "${C_BOLD}${C_YELLOW}Stop requested${C_RESET} — finishing current iteration and writing final report..."
     }
     trap on_interrupt INT TERM
+
+    # Sleep but watch stdin for `q` so the user has a clean alternative to
+    # Ctrl+C. Any other keystroke is ignored (we keep polling). Falls back to
+    # a plain sleep when stdin isn't an interactive TTY (CI, redirected input).
+    poll_quit_or_sleep() {
+        local duration=$1
+        if [[ "$USE_TICKER" != "true" || ! -t 0 ]]; then
+            sleep "$duration" || true
+            return
+        fi
+        local target=$(( $(date +%s) + duration ))
+        local key=""
+        while (( $(date +%s) < target )); do
+            local rem=$(( target - $(date +%s) ))
+            (( rem < 1 )) && rem=1
+            if read -rsn1 -t "$rem" key 2>/dev/null; then
+                case "$key" in
+                    q|Q)
+                        STOP_REQUESTED=true
+                        stop_ticker_animator
+                        ticker_done
+                        emit_styled \
+                            "Stop requested (q) — finishing current iteration and writing final report..." \
+                            "${C_BOLD}${C_YELLOW}Stop requested${C_RESET} (q) — finishing current iteration and writing final report..."
+                        return
+                        ;;
+                    *) ;;  # ignore stray keystrokes, keep polling
+                esac
+            fi
+        done
+    }
 
     # Cleanup is now silent on TTY (recorded in monitor.log only) — it ran on
     # almost every invocation and dominated the startup banner.
@@ -381,21 +467,90 @@ USAGE
     else
         DURATION_HINT=" (forever)"
     fi
-    APPS_JOINED=$(IFS=', '; echo "${APPS[*]}")
+    # Comma-space join. `${APPS[*]}` only honours the first IFS char, so build
+    # the joined string explicitly to keep the space after each comma.
+    printf -v APPS_JOINED '%s, ' "${APPS[@]}"
+    APPS_JOINED="${APPS_JOINED%, }"
     if [[ "$ANALYSE_EVERY_SECONDS" -gt 0 ]]; then
         SNAP_HINT="every $ANALYSE_EVERY"
     else
         SNAP_HINT="disabled"
     fi
 
-    emit_styled "Run: $RUN_DIR" "${C_BOLD}${C_CYAN}Run:${C_RESET} $RUN_DIR"
-    emit_styled "Apps: $APPS_JOINED" "${C_BOLD}${C_CYAN}Apps:${C_RESET} $APPS_JOINED"
-    emit_styled \
-        "Interval: ${INTERVAL}s | Iterations: ${ITERATIONS}${DURATION_HINT} | Snapshots: $SNAP_HINT" \
-        "${C_BOLD}Interval:${C_RESET} ${INTERVAL}s ${C_DIM}|${C_RESET} ${C_BOLD}Iterations:${C_RESET} ${ITERATIONS}${DURATION_HINT} ${C_DIM}|${C_RESET} ${C_BOLD}Snapshots:${C_RESET} $SNAP_HINT"
-    if [[ "$USE_TICKER" == "true" ]]; then
-        printf "${C_DIM}Press Ctrl+C to stop early; the final report still writes.${C_RESET}\n"
+    # Rule + key/value helpers for the bracketed banner / ticker / done layout.
+    # All rules share one width so they line up; separate BANNER_WIDTH governs
+    # apps-list wrapping so a narrow rule doesn't force aggressive wraps.
+    RULE_WIDTH=60
+    BANNER_WIDTH=60
+    rule_chars() { printf '─%.0s' $(seq 1 "$1"); }
+
+    print_top_rule() {
+        local label="$1"
+        local pad=$(( RULE_WIDTH - 4 - ${#label} ))
+        (( pad < 0 )) && pad=0
+        local trail
+        trail=$(rule_chars "$pad")
+        if [[ "$USE_TICKER" == "true" ]]; then
+            printf "${C_DIM}── ${C_RESET}${C_BOLD}${C_CYAN}%s${C_RESET}${C_DIM} %s${C_RESET}\n" "$label" "$trail"
+        else
+            printf -- "── %s %s\n" "$label" "$trail"
+        fi
+        echo "[$(iso_ts)] ── $label ──" >> "$LOG_FILE"
+    }
+    print_rule() {
+        local line
+        line=$(rule_chars "$RULE_WIDTH")
+        if [[ "$USE_TICKER" == "true" ]]; then
+            printf "${C_DIM}%s${C_RESET}\n" "$line"
+        else
+            printf "%s\n" "$line"
+        fi
+        echo "[$(iso_ts)] $line" >> "$LOG_FILE"
+    }
+    print_kv() {
+        # Indented key/value line. Key gets bold styling; value stays plain.
+        # 3-space indent so the key column aligns with the slug label in the
+        # top rule (which sits at column 3, after `── `).
+        local key="$1" value="$2"
+        if [[ "$USE_TICKER" == "true" ]]; then
+            printf "   ${C_BOLD}%-10s${C_RESET}  %s\n" "$key" "$value"
+        else
+            printf "   %-10s  %s\n" "$key" "$value"
+        fi
+        echo "[$(iso_ts)] $key: $value" >> "$LOG_FILE"
+    }
+    print_kv_wrapped() {
+        # Like print_kv but wraps `value` at word boundaries onto continuation
+        # lines indented to align under the value column.
+        local key="$1" value="$2"
+        local cont_indent="               "  # 3 + 10 + 2 = 15 spaces
+        local wrap_width=$(( BANNER_WIDTH - 15 ))
+        local first=true
+        while IFS= read -r line; do
+            if $first; then
+                print_kv "$key" "$line"
+                first=false
+            else
+                if [[ "$USE_TICKER" == "true" ]]; then
+                    printf "%s%s\n" "$cont_indent" "$line"
+                else
+                    printf "%s%s\n" "$cont_indent" "$line"
+                fi
+                echo "[$(iso_ts)]   $line" >> "$LOG_FILE"
+            fi
+        done < <(printf "%s\n" "$value" | fold -s -w "$wrap_width")
+    }
+
+    print_top_rule "$RUN_SLUG"
+    print_kv "Run" "$RUN_DIR"
+    print_kv_wrapped "Apps" "$APPS_JOINED"
+    print_kv "Interval" "${INTERVAL}s"
+    print_kv "Iterations" "${ITERATIONS}${DURATION_HINT}"
+    print_kv "Snapshots" "$SNAP_HINT"
+    if [[ "$USE_TICKER" == "true" && -t 0 ]]; then
+        print_kv "Quit" "press q or Ctrl/CMD + C "
     fi
+    print_rule
     if [[ -z "$PYTHON_CMD" ]]; then
         log_user "Python not found; continuing with raw log capture only"
     fi
@@ -458,12 +613,33 @@ USAGE
     iteration=0
     start_epoch=$(date +%s)
     last_analyse_epoch=$start_epoch
+
+    # Kick off the background animator before the first capture so the
+    # ticker line is alive from t=0.
+    if [[ "$USE_TICKER" == "true" ]]; then
+        write_ticker_state
+        ticker_animator &
+        TICKER_ANIMATOR_PID=$!
+    fi
+
     while true; do
         iteration=$((iteration + 1))
+        iter_start_epoch=$(date +%s)
         ts=$(date -u +"%Y%m%dT%H%M%SZ")
         log_to_file "Iteration $iteration: capturing logs"
+
+        # Capture all apps in parallel — flyctl calls are independent, and
+        # running them sequentially made each iteration ~5-10s instead of the
+        # advertised INTERVAL. Track each PID explicitly so we wait only for
+        # the capture children — bare `wait` would also block on the ticker
+        # animator, which is an intentional infinite loop.
+        local capture_pids=()
         for app in "${APPS[@]}"; do
-            capture_app "$app" "$ts" "$iteration"
+            capture_app "$app" "$ts" "$iteration" &
+            capture_pids+=($!)
+        done
+        for pid in "${capture_pids[@]}"; do
+            wait "$pid" 2>/dev/null || true
         done
 
         if [[ "$ANALYSE_EVERY_SECONDS" -gt 0 ]]; then
@@ -474,35 +650,28 @@ USAGE
             fi
         fi
 
-        # Build and emit the ticker line — single self-overwriting status row
-        # on a TTY, plain log lines otherwise (CI/redirected output).
-        elapsed=$(( $(date +%s) - start_epoch ))
-        if [[ "$ITERATIONS" -gt 0 ]]; then
-            iter_progress="iter ${iteration}/${ITERATIONS}"
-        else
-            iter_progress="iter ${iteration}"
-        fi
-        elapsed_fmt=$(fmt_duration $elapsed)
-        if [[ "$ANALYSE_EVERY_SECONDS" -gt 0 ]]; then
-            until_snap=$(( ANALYSE_EVERY_SECONDS - ($(date +%s) - last_analyse_epoch) ))
-            (( until_snap < 0 )) && until_snap=0
-            snap_fmt=$(fmt_duration $until_snap)
-            snap_plain=" | next snapshot in $snap_fmt"
-            snap_styled=" ${C_DIM}| next snapshot in ${snap_fmt}${C_RESET}"
-        else
-            snap_plain=""
-            snap_styled=""
-        fi
-        ticker \
-            "${iter_progress} | elapsed ${elapsed_fmt}${snap_plain}" \
-            "${C_BOLD}${C_CYAN}${iter_progress}${C_RESET} ${C_DIM}|${C_RESET} elapsed ${elapsed_fmt}${snap_styled}"
+        # Hand the latest counters to the animator; it picks them up on its
+        # next 200ms redraw.
+        write_ticker_state
+        log_to_file "iter ${iteration}/${ITERATIONS} · elapsed $(fmt_duration $(( $(date +%s) - start_epoch )))"
 
         if [[ "$STOP_REQUESTED" == "true" ]]; then break; fi
         if [[ "$ITERATIONS" -ne 0 && "$iteration" -ge "$ITERATIONS" ]]; then break; fi
-        sleep "$INTERVAL" || true
+
+        # `--interval` is the wall-clock period between iteration starts; if
+        # capture+analyse took longer than INTERVAL we run back-to-back (and
+        # log a warning) instead of compounding the lag.
+        iter_elapsed=$(( $(date +%s) - iter_start_epoch ))
+        remaining=$(( INTERVAL - iter_elapsed ))
+        if (( remaining > 0 )); then
+            poll_quit_or_sleep "$remaining"
+        else
+            log_to_file "Iteration $iteration took ${iter_elapsed}s (>= interval ${INTERVAL}s); no sleep"
+        fi
         if [[ "$STOP_REQUESTED" == "true" ]]; then break; fi
     done
 
+    stop_ticker_animator
     ticker_done
     trap - INT TERM
 
@@ -522,9 +691,13 @@ USAGE
             --root "$OUTPUT_ROOT" \
             --run "$run_ref" >> "$LOG_FILE" 2>&1 || \
             log_to_file "Final analyse failed (see log)"
+        print_rule
         emit_styled \
-            "Done after $iteration iteration(s) — report: $RUN_DIR/analysis.md" \
-            "${C_BOLD}${C_GREEN}Done${C_RESET} after $iteration iteration(s) ${C_DIM}—${C_RESET} report: ${C_BOLD}$RUN_DIR/analysis.md${C_RESET}"
+            "   ✓ Done after $iteration iteration(s)" \
+            "   ${C_BOLD}${C_GREEN}✓ Done${C_RESET} after ${C_BOLD}${C_CYAN}$iteration${C_RESET} iteration(s)"
+        emit_styled \
+            "     Report: $RUN_DIR/analysis.md" \
+            "     ${C_BOLD}Report:${C_RESET} $RUN_DIR/analysis.md"
     fi
 }
 

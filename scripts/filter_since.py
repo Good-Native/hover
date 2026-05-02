@@ -70,4 +70,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        # Bash forwards SIGINT to every child in the pipe. Exit quietly so
+        # `logs.sh`'s own trap can write the final report without a traceback
+        # bleeding into the terminal.
+        sys.exit(130)
