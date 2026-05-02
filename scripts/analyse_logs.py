@@ -313,27 +313,32 @@ class HeartbeatProbe(Probe):
         if not self.minute_seen:
             return {"name": self.name, "findings": [], "note": "no timestamped traffic"}
         minutes = sorted(set(self.minute_seen))
-        non_zero = [self.minute_info[m] for m in minutes if self.minute_info[m] > 0]
+        non_zero = [self.minute_info[m] for m in minutes if self.minute_info.get(m, 0) > 0]
         median = statistics.median(non_zero) if non_zero else 0
-        gaps: list[dict] = []
-        # Walk consecutive observed minutes and flag any wall-clock minute that
-        # fell entirely between them with no log lines. Without this we'd never
-        # report a gap, since `minute_seen` only contains minutes that *had*
-        # traffic.
-        if median >= 1 and len(minutes) >= 2:
-            for prev, curr in pairwise(minutes):
-                try:
-                    p = datetime.strptime(prev, "%Y-%m-%dT%H:%M")
-                    c = datetime.strptime(curr, "%Y-%m-%dT%H:%M")
-                except ValueError:
-                    continue
-                step = p + timedelta(minutes=1)
-                while step < c and len(gaps) < 200:
-                    gaps.append({
-                        "minute": step.strftime("%Y-%m-%dT%H:%M"),
-                        "expected_min": int(median),
-                    })
-                    step += timedelta(minutes=1)
+        gap_minutes: set[str] = set()
+        # Two ways a minute can be a heartbeat gap:
+        #   (1) observed in minute_seen (had warn/error traffic) but zero info,
+        #   (2) entirely missing — fell between two observed minutes with no
+        #       log lines at all, so `minute_seen` doesn't include it.
+        if median >= 1:
+            for m in minutes:
+                if self.minute_info.get(m, 0) == 0:
+                    gap_minutes.add(m)
+            if len(minutes) >= 2:
+                for prev, curr in pairwise(minutes):
+                    try:
+                        p = datetime.strptime(prev, "%Y-%m-%dT%H:%M")
+                        c = datetime.strptime(curr, "%Y-%m-%dT%H:%M")
+                    except ValueError:
+                        continue
+                    step = p + timedelta(minutes=1)
+                    while step < c:
+                        gap_minutes.add(step.strftime("%Y-%m-%dT%H:%M"))
+                        step += timedelta(minutes=1)
+        gaps: list[dict] = [
+            {"minute": m, "expected_min": int(median)}
+            for m in sorted(gap_minutes)[:200]
+        ]
         return {
             "name": self.name,
             "median_info_per_minute": median,
@@ -560,13 +565,14 @@ def main() -> int:
     if not runs:
         print(f"No runs matched under {root} (run={args.run!r})", file=sys.stderr)
         return 1
-    if len(runs) > 1:
-        # Each run writes to its own analysis.{md,json} under its run dir; with
-        # --out a single base path is shared, which would silently overwrite
-        # earlier runs. Combined output isn't implemented yet, so require a
-        # single-run selection.
+    if len(runs) > 1 and args.out:
+        # `--out` shares a single base path across the loop below, so multiple
+        # runs would silently overwrite each other. Without `--out` each run
+        # writes to its own `<run>/analysis.{md,json}` and multi-run selection
+        # is fine.
         print(
-            f"Resolved {len(runs)} runs; pass --run to select a single run.",
+            f"Resolved {len(runs)} runs; --out requires a single run because "
+            f"combined output isn't implemented.",
             file=sys.stderr,
         )
         return 2
