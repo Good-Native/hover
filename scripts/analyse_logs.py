@@ -142,7 +142,11 @@ class SeverityProbe(Probe):
             self.unknown.add(ts, line)
 
     def report(self) -> dict:
-        findings = [self.buckets[l].to_dict(l) for l in self.LEVELS if self.buckets[l].count]
+        findings = [
+            self.buckets[lvl].to_dict(lvl)
+            for lvl in self.LEVELS
+            if self.buckets[lvl].count
+        ]
         if self.unknown.count:
             findings.append(self.unknown.to_dict("unknown-level"))
         return {"name": self.name, "findings": findings}
@@ -163,7 +167,7 @@ class RegexBucketProbe(Probe):
                 self.buckets[label].add(ts, line)
 
     def report(self) -> dict:
-        findings = [b.to_dict(l) for l, b in self.buckets.items() if b.count]
+        findings = [b.to_dict(label) for label, b in self.buckets.items() if b.count]
         findings.sort(key=lambda f: -f["count"])
         return {"name": self.name, "findings": findings}
 
@@ -189,7 +193,7 @@ class PanicProbe(Probe):
 
     def report(self) -> dict:
         findings = sorted(
-            (b.to_dict(l) for l, b in self.buckets.items()),
+            (b.to_dict(label) for label, b in self.buckets.items()),
             key=lambda f: -f["count"],
         )
         return {"name": self.name, "findings": findings[:10]}
@@ -223,7 +227,7 @@ class HTTPStatusProbe(Probe):
             self.buckets[code].add(ts, line)
 
     def report(self) -> dict:
-        findings = [b.to_dict(l) for l, b in sorted(self.buckets.items())]
+        findings = [b.to_dict(label) for label, b in sorted(self.buckets.items())]
         findings = [f for f in findings if f["count"]]
         return {"name": self.name, "findings": findings}
 
