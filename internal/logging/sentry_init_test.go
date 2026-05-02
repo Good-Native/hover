@@ -32,6 +32,33 @@ func TestWrapBeforeSendStampsTags(t *testing.T) {
 	}
 }
 
+func TestWrapBeforeSendPreservesExistingDeployTags(t *testing.T) {
+	fn := wrapBeforeSend("hover-pr-372", "syd", "worker")
+
+	event := &sentry.Event{
+		Message: "test",
+		Tags: map[string]string{
+			"app":     "preset-app",
+			"region":  "iad",
+			"process": "analysis",
+		},
+	}
+
+	got := fn(event, nil)
+	if got == nil {
+		t.Fatal("expected non-nil event")
+	}
+	if got.Tags["app"] != "preset-app" {
+		t.Errorf("app overwritten: %q", got.Tags["app"])
+	}
+	if got.Tags["region"] != "iad" {
+		t.Errorf("region overwritten: %q", got.Tags["region"])
+	}
+	if got.Tags["process"] != "analysis" {
+		t.Errorf("process overwritten: %q", got.Tags["process"])
+	}
+}
+
 func TestWrapBeforeSendSkipsEmptyValues(t *testing.T) {
 	fn := wrapBeforeSend("", "", "")
 

@@ -61,11 +61,12 @@ func InitSentry(opts SentryOptions) (func(), error) {
 	return func() { sentry.Flush(2 * time.Second) }, nil
 }
 
-// wrapBeforeSend stamps deploy-identifying tags directly onto every event
-// before delegating to the existing BeforeSend normalisation. The earlier
-// approach used sentry.ConfigureScope, but staging diagnostics showed scope
-// tags were not reaching events captured via the sentryslog handler — likely
-// a goroutine-local hub interaction. Stamping in BeforeSend is unconditional.
+// wrapBeforeSend delegates to the existing BeforeSend normalisation first,
+// then stamps deploy-identifying tags onto every non-nil event without
+// overwriting any caller-provided values. The earlier approach used
+// sentry.ConfigureScope, but staging diagnostics showed scope tags were not
+// reaching events captured via the sentryslog handler — likely a
+// goroutine-local hub interaction. Stamping in BeforeSend is unconditional.
 func wrapBeforeSend(app, region, process string) func(*sentry.Event, *sentry.EventHint) *sentry.Event {
 	return func(event *sentry.Event, hint *sentry.EventHint) *sentry.Event {
 		event = BeforeSend(event, hint)
