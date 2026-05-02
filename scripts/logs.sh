@@ -257,6 +257,30 @@ USAGE
     USE_TICKER=false
     if [[ -t 1 ]]; then USE_TICKER=true; fi
 
+    # ANSI palette — empty when not on a TTY so non-TTY output stays plain and
+    # `monitor.log` writes (which use the *_plain variables) never carry codes.
+    if [[ "$USE_TICKER" == "true" ]]; then
+        C_BOLD=$'\033[1m'
+        C_DIM=$'\033[2m'
+        C_CYAN=$'\033[36m'
+        C_GREEN=$'\033[32m'
+        C_YELLOW=$'\033[33m'
+        C_RESET=$'\033[0m'
+    else
+        C_BOLD="" C_DIM="" C_CYAN="" C_GREEN="" C_YELLOW="" C_RESET=""
+    fi
+
+    emit_styled() {
+        # Print a styled line to stdout, plain text to the log.
+        local plain="$1" styled="$2"
+        if [[ "$USE_TICKER" == "true" ]]; then
+            printf "%s\n" "$styled"
+        else
+            echo "$plain"
+        fi
+        echo "[$(iso_ts)] $plain" >> "$LOG_FILE"
+    }
+
     fmt_duration() {
         local s=$1
         if (( s < 60 )); then printf "%ds" "$s"; return; fi
@@ -264,11 +288,11 @@ USAGE
         printf "%dh%dm" $((s/3600)) $(( (s%3600)/60 ))
     }
     ticker() {
-        local msg="$*"
+        local plain="$1" styled="$2"
         if [[ "$USE_TICKER" == "true" ]]; then
-            printf "\r\033[K%s" "$msg"
+            printf "\r\033[K%s" "$styled"
         fi
-        echo "[$(iso_ts)] $msg" >> "$LOG_FILE"
+        echo "[$(iso_ts)] $plain" >> "$LOG_FILE"
     }
     ticker_done() {
         if [[ "$USE_TICKER" == "true" ]]; then
@@ -280,7 +304,9 @@ USAGE
     on_interrupt() {
         STOP_REQUESTED=true
         ticker_done
-        log_user "Stop requested — finishing current iteration and writing final report..."
+        emit_styled \
+            "Stop requested — finishing current iteration and writing final report..." \
+            "${C_BOLD}${C_YELLOW}Stop requested${C_RESET} — finishing current iteration and writing final report..."
     }
     trap on_interrupt INT TERM
 
@@ -337,11 +363,13 @@ USAGE
         SNAP_HINT="disabled"
     fi
 
-    log_user "Run: $RUN_DIR"
-    log_user "Apps: $APPS_JOINED"
-    log_user "Interval: ${INTERVAL}s | Iterations: ${ITERATIONS}${DURATION_HINT} | Snapshots: $SNAP_HINT"
+    emit_styled "Run: $RUN_DIR" "${C_BOLD}${C_CYAN}Run:${C_RESET} $RUN_DIR"
+    emit_styled "Apps: $APPS_JOINED" "${C_BOLD}${C_CYAN}Apps:${C_RESET} $APPS_JOINED"
+    emit_styled \
+        "Interval: ${INTERVAL}s | Iterations: ${ITERATIONS}${DURATION_HINT} | Snapshots: $SNAP_HINT" \
+        "${C_BOLD}Interval:${C_RESET} ${INTERVAL}s ${C_DIM}|${C_RESET} ${C_BOLD}Iterations:${C_RESET} ${ITERATIONS}${DURATION_HINT} ${C_DIM}|${C_RESET} ${C_BOLD}Snapshots:${C_RESET} $SNAP_HINT"
     if [[ "$USE_TICKER" == "true" ]]; then
-        echo "Press Ctrl+C to stop early; the final report still writes."
+        printf "${C_DIM}Press Ctrl+C to stop early; the final report still writes.${C_RESET}\n"
     fi
     if [[ -z "$PYTHON_CMD" ]]; then
         log_user "Python not found; continuing with raw log capture only"
@@ -429,14 +457,20 @@ USAGE
         else
             iter_progress="iter ${iteration}"
         fi
+        elapsed_fmt=$(fmt_duration $elapsed)
         if [[ "$ANALYSE_EVERY_SECONDS" -gt 0 ]]; then
             until_snap=$(( ANALYSE_EVERY_SECONDS - ($(date +%s) - last_analyse_epoch) ))
             (( until_snap < 0 )) && until_snap=0
-            snap_part=" | next snapshot in $(fmt_duration $until_snap)"
+            snap_fmt=$(fmt_duration $until_snap)
+            snap_plain=" | next snapshot in $snap_fmt"
+            snap_styled=" ${C_DIM}| next snapshot in ${snap_fmt}${C_RESET}"
         else
-            snap_part=""
+            snap_plain=""
+            snap_styled=""
         fi
-        ticker "${iter_progress} | elapsed $(fmt_duration $elapsed)${snap_part}"
+        ticker \
+            "${iter_progress} | elapsed ${elapsed_fmt}${snap_plain}" \
+            "${C_BOLD}${C_CYAN}${iter_progress}${C_RESET} ${C_DIM}|${C_RESET} elapsed ${elapsed_fmt}${snap_styled}"
 
         if [[ "$STOP_REQUESTED" == "true" ]]; then break; fi
         if [[ "$ITERATIONS" -ne 0 && "$iteration" -ge "$ITERATIONS" ]]; then break; fi
@@ -463,7 +497,9 @@ USAGE
             --root "$OUTPUT_ROOT" \
             --run "$run_ref" >> "$LOG_FILE" 2>&1 || \
             log_to_file "Final analyse failed (see log)"
-        log_user "Done after $iteration iteration(s) — report: $RUN_DIR/analysis.md"
+        emit_styled \
+            "Done after $iteration iteration(s) — report: $RUN_DIR/analysis.md" \
+            "${C_BOLD}${C_GREEN}Done${C_RESET} after $iteration iteration(s) ${C_DIM}—${C_RESET} report: ${C_BOLD}$RUN_DIR/analysis.md${C_RESET}"
     fi
 }
 
