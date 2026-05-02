@@ -60,4 +60,4 @@ any ad-hoc `--keyword`/`--regex`. Every finding records `count`, `first_seen`,
 `last_seen`, and `peak` (timestamp of the highest-count minute).
 
 The legacy `scripts/monitor_logs.sh` still works — it forwards to
-`logs.sh monitor`.
+`./scripts/logs.sh monitor`.

@@ -319,7 +319,7 @@ For production investigations use `scripts/logs.sh`:
 ```
 
 The legacy `scripts/monitor_logs.sh` still works — it forwards to
-`logs.sh monitor`.
+`./scripts/logs.sh monitor`.
 
 **Output structure:**
 
