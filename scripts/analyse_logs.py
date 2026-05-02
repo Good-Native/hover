@@ -47,7 +47,9 @@ def _iso_seconds(rec: dict | None, line: str = "") -> str:
                 try:
                     return datetime.fromisoformat(raw).isoformat(timespec="seconds")
                 except ValueError:
-                    return raw[:19]
+                    # Malformed value for this key — keep looking. Other ISO
+                    # keys or the leading-line fallback below may be valid.
+                    continue
     if line:
         m = LEADING_TS_RE.match(line)
         if m:
