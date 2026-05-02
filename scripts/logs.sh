@@ -26,15 +26,24 @@ Run `logs.sh <command> --help` for command-specific options.
 USAGE
 }
 
-# Locate a working Python interpreter shared by search/analyse helpers.
+# Probe a candidate interpreter and confirm it's Python 3+. Echoes nothing on
+# success; non-zero exit means the candidate isn't usable. `python` on some
+# systems is still 2.x, so just `import sys` isn't enough — we explicitly
+# check `sys.version_info[0] >= 3`.
+_is_python3() {
+    "$@" -c "import sys; sys.exit(0 if sys.version_info[0] >= 3 else 1)" \
+        >/dev/null 2>&1
+}
+
+# Locate a working Python 3 interpreter shared by search/analyse helpers.
 resolve_python() {
-    if command -v python3 >/dev/null 2>&1 && python3 -c "import sys" >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1 && _is_python3 python3; then
         PYTHON_CMD="python3"
         PYTHON_ARGS=()
-    elif command -v python >/dev/null 2>&1 && python -c "import sys" >/dev/null 2>&1; then
+    elif command -v python >/dev/null 2>&1 && _is_python3 python; then
         PYTHON_CMD="python"
         PYTHON_ARGS=()
-    elif command -v py >/dev/null 2>&1 && py -3 -c "import sys" >/dev/null 2>&1; then
+    elif command -v py >/dev/null 2>&1 && _is_python3 py -3; then
         PYTHON_CMD="py"
         PYTHON_ARGS=(-3)
     else
@@ -188,16 +197,24 @@ USAGE
     for i in "${!APPS[@]}"; do
         APPS[i]="${APPS[i]// /}"
     done
-    if [[ ${#APPS[@]} -eq 0 || -z "${APPS[0]}" ]]; then
+    if [[ ${#APPS[@]} -eq 0 ]]; then
         echo "at least one app name is required" >&2
         exit 1
     fi
+    # Reject every empty entry — `--app "hover,,worker"` or a trailing comma
+    # would otherwise create `$RUN_DIR//raw` and call `flyctl logs --app ""`.
+    for app_name in "${APPS[@]}"; do
+        if [[ -z "$app_name" ]]; then
+            echo "app list contains an empty value; check comma placement in --app/$APP" >&2
+            exit 1
+        fi
+    done
 
-    if command -v python3 >/dev/null 2>&1 && python3 -c "import sys" >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1 && _is_python3 python3; then
         PYTHON_CMD="python3"
-    elif command -v python >/dev/null 2>&1 && python -c "import sys" >/dev/null 2>&1; then
+    elif command -v python >/dev/null 2>&1 && _is_python3 python; then
         PYTHON_CMD="python"
-    elif command -v py >/dev/null 2>&1 && py -3 -c "import sys" >/dev/null 2>&1; then
+    elif command -v py >/dev/null 2>&1 && _is_python3 py -3; then
         PYTHON_CMD="py"
         PYTHON_ARGS=(-3)
     fi
@@ -227,6 +244,13 @@ USAGE
         SETTINGS_SUFFIX="${INTERVAL_STR}_${DURATION_STR}"
     fi
 
+    # `--run-id` is interpolated into a filesystem path; reject anything that
+    # could escape the advertised `logs/YYYYMMDD/HHMM_<slug>_<settings>/`
+    # layout (path separators, traversal segments, leading dot/dash).
+    if [[ -n "$RUN_ID" && ! "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+        echo "run-id may only contain letters, numbers, dot, underscore, and hyphen, and may not start with '.' or '-'" >&2
+        exit 1
+    fi
     if [[ -z "$RUN_ID" ]]; then
         RUN_ID="$(generate_run_slug)_${SETTINGS_SUFFIX}"
     else
@@ -335,10 +359,11 @@ USAGE
                         (cd "$zip_parent" && zip -q -r "raw.zip" "raw" && rm -rf "raw") || \
                             log_to_file "  Failed to zip raw directory $raw_dir"
                     done < <(find "$run_dir" -type d -name raw 2>/dev/null)
-                    iter_files=$(find "$run_dir" -type f -name '*_iter*.json' 2>/dev/null)
-                    if [[ -n "$iter_files" ]]; then
+                    # Null-delimited so a `--run-id` containing spaces (or any
+                    # other whitespace) doesn't split filenames mid-token.
+                    if find "$run_dir" -type f -name '*_iter*.json' -print -quit 2>/dev/null | grep -q .; then
                         log_to_file "  Removing iteration JSONs: $date_dir/$run_name"
-                        printf '%s\n' "$iter_files" | xargs rm -f || \
+                        find "$run_dir" -type f -name '*_iter*.json' -print0 2>/dev/null | xargs -0 rm -f || \
                             log_to_file "  Failed to remove iteration JSONs in $run_dir"
                     fi
                 else
