@@ -32,6 +32,22 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.2] – 2026-05-02
+
+### Added
+
+- Sentry events now carry `app`, `process`, `region`, and `server_name` tags
+  identifying the Fly app, binary, region, and machine that emitted them.
+  Review-app errors previously had none of these, so bursts couldn't be
+  attributed to a specific deploy. New helpers `logging.InitSentry` and
+  `observability.StartMetricsServer` centralise the duplicated bootstrap across
+  `cmd/app`, `cmd/worker`, and `cmd/analysis`.
+
+### Fixed
+
+- `cmd/analysis` now gracefully shuts down its metrics HTTP server on SIGTERM;
+  previously it spawned the listener but never called `Shutdown`.
+
 ## [0.34.1] – 2026-05-01
 
 ### Added

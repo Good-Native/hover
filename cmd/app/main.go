@@ -25,7 +25,6 @@ import (
 	"github.com/Harvey-AU/hover/internal/loops"
 	"github.com/Harvey-AU/hover/internal/notifications"
 	"github.com/Harvey-AU/hover/internal/observability"
-	"github.com/getsentry/sentry-go"
 	"github.com/joho/godotenv"
 	"golang.org/x/time/rate"
 )
@@ -403,28 +402,20 @@ func main() {
 		}()
 	}
 
-	var err error
-
 	// Init before setupLogging so the fanout handler wires the existing client.
 	if config.SentryDSN != "" {
-		err := sentry.Init(sentry.ClientOptions{
-			Dsn:         config.SentryDSN,
-			Environment: config.Env,
-			TracesSampleRate: func() float64 {
-				if config.Env == "production" {
-					return 0.1
-				}
-				return 1.0
-			}(),
-			AttachStacktrace: true,
+		sentryFlush, err := logging.InitSentry(logging.SentryOptions{
+			DSN:              config.SentryDSN,
+			Environment:      config.Env,
+			Process:          "app",
+			TracesSampleRate: appTracesSampleRate(config.Env),
 			Debug:            config.Env == "development",
-			BeforeSend:       logging.BeforeSend,
 		})
 		if err != nil {
 			startupLog.Warn("Failed to initialise Sentry", "error", err)
 		} else {
 			startupLog.Info("Sentry initialised successfully", "environment", config.Env)
-			defer sentry.Flush(2 * time.Second)
+			defer sentryFlush()
 		}
 	} else {
 		startupLog.Warn("Sentry DSN not configured, error tracking disabled")
@@ -437,10 +428,7 @@ func main() {
 		}
 	}()
 
-	var (
-		obsProviders *observability.Providers
-		metricsSrv   *http.Server
-	)
+	var obsProviders *observability.Providers
 
 	if config.ObservabilityEnabled {
 		// FLY_APP_NAME distinguishes review apps (hover-pr-342) from prod.
@@ -448,8 +436,9 @@ func main() {
 		if serviceName == "" {
 			serviceName = "hover"
 		}
-		obsProviders, err = observability.Init(context.Background(), observability.Config{
-			Enabled:        true,
+		// EnablePprof intentionally false — pprof on cmd/app would expose a
+		// debug surface alongside the public HTTP listener.
+		metricsSrv, err := observability.StartMetricsServer(context.Background(), observability.MetricsServerOptions{
 			ServiceName:    serviceName,
 			Environment:    config.Env,
 			OTLPEndpoint:   strings.TrimSpace(config.OTLPEndpoint),
@@ -460,42 +449,12 @@ func main() {
 		if err != nil {
 			startupLog.Warn("Failed to initialise observability providers", "error", err)
 		} else {
+			obsProviders = metricsSrv.Providers
 			defer func() {
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
-				if err := obsProviders.Shutdown(shutdownCtx); err != nil {
-					startupLog.Warn("Failed to flush telemetry providers cleanly", "error", err)
-				}
+				metricsSrv.Shutdown(shutdownCtx)
 			}()
-
-			if obsProviders.MetricsHandler != nil && config.MetricsAddr != "" {
-				metricsSrv = &http.Server{
-					Addr:              config.MetricsAddr,
-					Handler:           obsProviders.MetricsHandler,
-					ReadHeaderTimeout: 5 * time.Second,
-				}
-
-				// Bind before logging readiness so a bind failure surfaces correctly.
-				metricsListener, err := net.Listen("tcp", config.MetricsAddr)
-				if err != nil {
-					startupLog.Error("Metrics server failed to bind", "error", err, "addr", config.MetricsAddr)
-				} else {
-					go func() {
-						startupLog.Info("Metrics server listening", "addr", config.MetricsAddr)
-						if err := metricsSrv.Serve(metricsListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-							startupLog.Error("Metrics server failed", "error", err)
-						}
-					}()
-
-					defer func() {
-						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-						defer cancel()
-						if err := metricsSrv.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-							startupLog.Warn("Graceful shutdown of metrics server failed", "error", err)
-						}
-					}()
-				}
-			}
 		}
 	}
 
@@ -791,6 +750,15 @@ func getEnvWithDefault(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+// Production runs at 10% to keep trace volume within budget; non-prod
+// environments sample fully so review apps emit a usable trace stream.
+func appTracesSampleRate(env string) float64 {
+	if env == "production" {
+		return 0.1
+	}
+	return 1.0
 }
 
 func setupLogging(config *Config) {
