@@ -19,6 +19,7 @@ import statistics
 import sys
 import zipfile
 from collections import Counter, defaultdict, deque
+from itertools import pairwise
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterator
@@ -270,7 +271,7 @@ class LatencyProbe(Probe):
         n = len(vs)
 
         def pct(p: float) -> float:
-            i = max(0, min(n - 1, int(round(p / 100 * (n - 1)))))
+            i = max(0, min(n - 1, round(p / 100 * (n - 1))))
             return vs[i]
 
         self.slowest.sort(key=lambda x: -x[0])
@@ -320,7 +321,7 @@ class HeartbeatProbe(Probe):
         # report a gap, since `minute_seen` only contains minutes that *had*
         # traffic.
         if median >= 1 and len(minutes) >= 2:
-            for prev, curr in zip(minutes, minutes[1:]):
+            for prev, curr in pairwise(minutes):
                 try:
                     p = datetime.strptime(prev, "%Y-%m-%dT%H:%M")
                     c = datetime.strptime(curr, "%Y-%m-%dT%H:%M")
