@@ -245,8 +245,49 @@ USAGE
         mkdir -p "$RUN_DIR/$app/raw"
     done
 
+    # Output helpers — keep TTY tidy, monitor.log retains every event.
+    iso_ts() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+    log_to_file() { echo "[$(iso_ts)] $*" >> "$LOG_FILE"; }
+    log_user() {
+        # Print a user-facing message and record it to the log too.
+        echo "$*"
+        echo "[$(iso_ts)] $*" >> "$LOG_FILE"
+    }
+
+    USE_TICKER=false
+    if [[ -t 1 ]]; then USE_TICKER=true; fi
+
+    fmt_duration() {
+        local s=$1
+        if (( s < 60 )); then printf "%ds" "$s"; return; fi
+        if (( s < 3600 )); then printf "%dm%ds" $((s/60)) $((s%60)); return; fi
+        printf "%dh%dm" $((s/3600)) $(( (s%3600)/60 ))
+    }
+    ticker() {
+        local msg="$*"
+        if [[ "$USE_TICKER" == "true" ]]; then
+            printf "\r\033[K%s" "$msg"
+        fi
+        echo "[$(iso_ts)] $msg" >> "$LOG_FILE"
+    }
+    ticker_done() {
+        if [[ "$USE_TICKER" == "true" ]]; then
+            printf "\n"
+        fi
+    }
+
+    STOP_REQUESTED=false
+    on_interrupt() {
+        STOP_REQUESTED=true
+        ticker_done
+        log_user "Stop requested — finishing current iteration and writing final report..."
+    }
+    trap on_interrupt INT TERM
+
+    # Cleanup is now silent on TTY (recorded in monitor.log only) — it ran on
+    # almost every invocation and dominated the startup banner.
     if [[ "$CLEANUP_OLD" == "true" ]]; then
-        echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Cleaning up old runs (older than $CLEANUP_DAYS days, mode: $CLEANUP_MODE)" | tee -a "$LOG_FILE"
+        log_to_file "Cleaning up old runs (older than $CLEANUP_DAYS days, mode: $CLEANUP_MODE)"
         if [[ "$(uname)" == "Darwin" ]]; then
             CUTOFF_DATE=$(date -u -v-${CLEANUP_DAYS}d +"%Y%m%d" 2>/dev/null || date -u +"%Y%m%d")
         else
@@ -255,12 +296,8 @@ USAGE
         if [[ -d "$OUTPUT_ROOT" ]]; then
             find "$OUTPUT_ROOT" -mindepth 2 -maxdepth 2 -type d | while read -r run_dir; do
                 date_dir=$(basename "$(dirname "$run_dir")")
-                if ! [[ "$date_dir" =~ ^[0-9]{8}$ ]]; then
-                    continue
-                fi
-                if [[ "$date_dir" -ge "$CUTOFF_DATE" ]]; then
-                    continue
-                fi
+                if ! [[ "$date_dir" =~ ^[0-9]{8}$ ]]; then continue; fi
+                if [[ "$date_dir" -ge "$CUTOFF_DATE" ]]; then continue; fi
                 run_name=$(basename "$run_dir")
                 if [[ "$CLEANUP_MODE" == "zip" ]]; then
                     while IFS= read -r raw_dir; do
@@ -268,37 +305,46 @@ USAGE
                         zip_parent=$(dirname "$raw_dir")
                         [[ -f "$zip_parent/raw.zip" ]] && continue
                         rel=${raw_dir#"$run_dir/"}
-                        echo "  Zipping raw logs: $date_dir/$run_name/$rel" | tee -a "$LOG_FILE"
-                        (cd "$zip_parent" && zip -q -r "raw.zip" "raw" && rm -rf "raw") || {
-                            echo "  Failed to zip raw directory $raw_dir" | tee -a "$LOG_FILE"
-                        }
+                        log_to_file "  Zipping raw logs: $date_dir/$run_name/$rel"
+                        (cd "$zip_parent" && zip -q -r "raw.zip" "raw" && rm -rf "raw") || \
+                            log_to_file "  Failed to zip raw directory $raw_dir"
                     done < <(find "$run_dir" -type d -name raw 2>/dev/null)
                     iter_files=$(find "$run_dir" -type f -name '*_iter*.json' 2>/dev/null)
                     if [[ -n "$iter_files" ]]; then
-                        echo "  Removing iteration JSONs: $date_dir/$run_name" | tee -a "$LOG_FILE"
-                        printf '%s\n' "$iter_files" | xargs rm -f || {
-                            echo "  Failed to remove iteration JSONs in $run_dir" | tee -a "$LOG_FILE"
-                        }
+                        log_to_file "  Removing iteration JSONs: $date_dir/$run_name"
+                        printf '%s\n' "$iter_files" | xargs rm -f || \
+                            log_to_file "  Failed to remove iteration JSONs in $run_dir"
                     fi
                 else
-                    echo "  Deleting: $date_dir/$run_name" | tee -a "$LOG_FILE"
-                    rm -rf "$run_dir" || {
-                        echo "  Failed to delete $run_dir" | tee -a "$LOG_FILE"
-                    }
+                    log_to_file "  Deleting: $date_dir/$run_name"
+                    rm -rf "$run_dir" || log_to_file "  Failed to delete $run_dir"
                 fi
             done
         fi
-        echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Cleanup complete" | tee -a "$LOG_FILE"
+        log_to_file "Cleanup complete"
     fi
 
-    echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Starting log monitor" | tee -a "$LOG_FILE"
-    echo "Apps: ${APPS[*]} | Interval: ${INTERVAL}s | Samples: $SAMPLES | Iterations: $ITERATIONS" | tee -a "$LOG_FILE"
-    echo "Run directory: $RUN_DIR" | tee -a "$LOG_FILE"
-    for app in "${APPS[@]}"; do
-        echo "  [$app] raw: $RUN_DIR/$app/raw  summaries: $RUN_DIR/$app" | tee -a "$LOG_FILE"
-    done
+    # Compact startup banner: run dir, app list, and one settings line.
+    if [[ "$ITERATIONS" -gt 0 ]]; then
+        DURATION_HINT=" (~$(fmt_duration $((ITERATIONS * INTERVAL))))"
+    else
+        DURATION_HINT=" (forever)"
+    fi
+    APPS_JOINED=$(IFS=', '; echo "${APPS[*]}")
+    if [[ "$ANALYSE_EVERY_SECONDS" -gt 0 ]]; then
+        SNAP_HINT="every $ANALYSE_EVERY"
+    else
+        SNAP_HINT="disabled"
+    fi
+
+    log_user "Run: $RUN_DIR"
+    log_user "Apps: $APPS_JOINED"
+    log_user "Interval: ${INTERVAL}s | Iterations: ${ITERATIONS}${DURATION_HINT} | Snapshots: $SNAP_HINT"
+    if [[ "$USE_TICKER" == "true" ]]; then
+        echo "Press Ctrl+C to stop early; the final report still writes."
+    fi
     if [[ -z "$PYTHON_CMD" ]]; then
-        echo "Python not found; continuing with raw log capture only" | tee -a "$LOG_FILE"
+        log_user "Python not found; continuing with raw log capture only"
     fi
 
     capture_app() {
@@ -317,61 +363,52 @@ USAGE
                 | env PYTHONUTF8=1 "$PYTHON_CMD" "${PYTHON_ARGS[@]+"${PYTHON_ARGS[@]}"}" \
                     "$SCRIPT_DIR/filter_since.py" "$cursor_file" \
                 > "$raw_file"; then
-                echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] [$app] Failed to fetch logs from Fly; raw output stored in $raw_file" | tee -a "$LOG_FILE"
+                log_to_file "[$app] Failed to fetch logs from Fly; raw output stored in $raw_file"
                 return
             fi
         else
             if ! flyctl logs --app "$app" --no-tail 2>&1 | tail -n "$SAMPLES" > "$raw_file"; then
-                echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] [$app] Failed to fetch logs from Fly; raw output stored in $raw_file" | tee -a "$LOG_FILE"
+                log_to_file "[$app] Failed to fetch logs from Fly; raw output stored in $raw_file"
                 return
             fi
         fi
 
-        # Empty filtered output means nothing new since last cursor — skip the
-        # downstream summary step (process_logs.py would just produce an empty
-        # iteration JSON).
         if [[ ! -s "$raw_file" ]]; then
             return
         fi
-
         if [[ -z "$PYTHON_CMD" ]]; then
-            echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] [$app] Captured raw logs only (Python unavailable)" | tee -a "$LOG_FILE"
+            log_to_file "[$app] Captured raw logs only (Python unavailable)"
             return
         fi
-
         if ! env PYTHONUTF8=1 "$PYTHON_CMD" "${PYTHON_ARGS[@]+"${PYTHON_ARGS[@]}"}" "$SCRIPT_DIR/process_logs.py" "$raw_file" "$summary_file" >> "$LOG_FILE" 2>&1; then
-            echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] [$app] Failed to process logs (see output above)" | tee -a "$LOG_FILE"
+            log_to_file "[$app] Failed to process logs (see output above)"
             return
         fi
-
         env PYTHONUTF8=1 "$PYTHON_CMD" "${PYTHON_ARGS[@]+"${PYTHON_ARGS[@]}"}" "$SCRIPT_DIR/aggregate_logs.py" "$RUN_DIR/$app" >> "$LOG_FILE" 2>&1
     }
 
     run_snapshot_analyse() {
-        # Run analyse against the in-progress run; output goes to snapshots/.
-        if [[ -z "$PYTHON_CMD" ]]; then
-            return
-        fi
+        if [[ -z "$PYTHON_CMD" ]]; then return; fi
         local snap_ts
         snap_ts=$(date -u +"%H%M%SZ")
         mkdir -p "$RUN_DIR/snapshots"
         local run_ref="$(basename "$DATE_DIR")/$(basename "$RUN_DIR")"
-        echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Snapshot analyse → $RUN_DIR/snapshots/analysis_${snap_ts}.md" | tee -a "$LOG_FILE"
+        log_to_file "Snapshot analyse → $RUN_DIR/snapshots/analysis_${snap_ts}.md"
         env PYTHONUTF8=1 "$PYTHON_CMD" "${PYTHON_ARGS[@]+"${PYTHON_ARGS[@]}"}" \
             "$SCRIPT_DIR/analyse_logs.py" \
             --root "$OUTPUT_ROOT" \
             --run "$run_ref" \
-            --out "$RUN_DIR/snapshots/analysis_${snap_ts}" >> "$LOG_FILE" 2>&1 || {
-            echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Snapshot analyse failed (see log)" | tee -a "$LOG_FILE"
-        }
+            --out "$RUN_DIR/snapshots/analysis_${snap_ts}" >> "$LOG_FILE" 2>&1 || \
+            log_to_file "Snapshot analyse failed (see log)"
     }
 
     iteration=0
-    last_analyse_epoch=$(date +%s)
+    start_epoch=$(date +%s)
+    last_analyse_epoch=$start_epoch
     while true; do
         iteration=$((iteration + 1))
         ts=$(date -u +"%Y%m%dT%H%M%SZ")
-        echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Iteration $iteration: capturing logs" | tee -a "$LOG_FILE"
+        log_to_file "Iteration $iteration: capturing logs"
         for app in "${APPS[@]}"; do
             capture_app "$app" "$ts" "$iteration"
         done
@@ -384,32 +421,49 @@ USAGE
             fi
         fi
 
-        if [[ "$ITERATIONS" -ne 0 && "$iteration" -ge "$ITERATIONS" ]]; then
-            break
+        # Build and emit the ticker line — single self-overwriting status row
+        # on a TTY, plain log lines otherwise (CI/redirected output).
+        elapsed=$(( $(date +%s) - start_epoch ))
+        if [[ "$ITERATIONS" -gt 0 ]]; then
+            iter_progress="iter ${iteration}/${ITERATIONS}"
+        else
+            iter_progress="iter ${iteration}"
         fi
-        sleep "$INTERVAL"
+        if [[ "$ANALYSE_EVERY_SECONDS" -gt 0 ]]; then
+            until_snap=$(( ANALYSE_EVERY_SECONDS - ($(date +%s) - last_analyse_epoch) ))
+            (( until_snap < 0 )) && until_snap=0
+            snap_part=" | next snapshot in $(fmt_duration $until_snap)"
+        else
+            snap_part=""
+        fi
+        ticker "${iter_progress} | elapsed $(fmt_duration $elapsed)${snap_part}"
+
+        if [[ "$STOP_REQUESTED" == "true" ]]; then break; fi
+        if [[ "$ITERATIONS" -ne 0 && "$iteration" -ge "$ITERATIONS" ]]; then break; fi
+        sleep "$INTERVAL" || true
+        if [[ "$STOP_REQUESTED" == "true" ]]; then break; fi
     done
 
-    echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Monitoring finished after $iteration iteration(s)" | tee -a "$LOG_FILE"
+    ticker_done
+    trap - INT TERM
 
     if [[ -z "$PYTHON_CMD" ]]; then
-        echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Skipping aggregation (Python unavailable)" | tee -a "$LOG_FILE"
+        log_user "Skipping aggregation (Python unavailable)"
     else
-        echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Running final aggregation..." | tee -a "$LOG_FILE"
+        log_to_file "Running final aggregation..."
         for app in "${APPS[@]}"; do
             env PYTHONUTF8=1 "$PYTHON_CMD" "${PYTHON_ARGS[@]+"${PYTHON_ARGS[@]}"}" "$SCRIPT_DIR/aggregate_logs.py" "$RUN_DIR/$app" >> "$LOG_FILE" 2>&1
         done
-        echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Aggregation complete" | tee -a "$LOG_FILE"
+        log_to_file "Aggregation complete"
 
-        echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Running final analyse..." | tee -a "$LOG_FILE"
+        log_to_file "Running final analyse..."
         run_ref="$(basename "$DATE_DIR")/$(basename "$RUN_DIR")"
         env PYTHONUTF8=1 "$PYTHON_CMD" "${PYTHON_ARGS[@]+"${PYTHON_ARGS[@]}"}" \
             "$SCRIPT_DIR/analyse_logs.py" \
             --root "$OUTPUT_ROOT" \
-            --run "$run_ref" >> "$LOG_FILE" 2>&1 || {
-            echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Final analyse failed (see log)" | tee -a "$LOG_FILE"
-        }
-        echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] Analyse complete: $RUN_DIR/analysis.md" | tee -a "$LOG_FILE"
+            --run "$run_ref" >> "$LOG_FILE" 2>&1 || \
+            log_to_file "Final analyse failed (see log)"
+        log_user "Done after $iteration iteration(s) — report: $RUN_DIR/analysis.md"
     fi
 }
 

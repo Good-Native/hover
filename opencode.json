@@ -8,7 +8,7 @@
     },
     "monitor-fly": {
       "description": "Collect and summarise Fly logs",
-      "template": "Run ./scripts/monitor_logs.sh with suitable arguments from $ARGUMENTS if provided. Summarise critical patterns, error spikes, and likely causes."
+      "template": "Run ./scripts/logs.sh with suitable arguments from $ARGUMENTS if provided (use the `search` or `analyse` subcommand for grep / probe-driven analysis of an existing run). Summarise critical patterns, error spikes, and likely causes."
     },
     "load-test": {
       "description": "Run scripted load test safely",

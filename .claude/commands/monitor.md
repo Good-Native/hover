@@ -1,41 +1,63 @@
 # Monitor Fly Logs
 
-Sample and analyse Fly.io logs at regular intervals.
+Capture, search, and analyse Fly.io logs via `scripts/logs.sh`.
 
 ## Default usage
 
 ```bash
-./scripts/monitor_logs.sh
+./scripts/logs.sh
 ```
 
-Runs for 4 hours with 10-second intervals.
+Captures from all five Fly apps (`hover`, `hover-worker`, `hover-analysis`,
+`hover-autoscaler-worker`, `hover-autoscaler-analysis`) every 3s, runs an
+analyse snapshot every 5 minutes, and writes a final report when the run
+finishes (~72 minutes by default). Press Ctrl+C to stop early — the final report
+still writes.
 
-## Options
+## Subcommands
 
 ```bash
-./scripts/monitor_logs.sh --run-id "descriptive-name"    # Custom name
-./scripts/monitor_logs.sh --interval 30 --iterations 120 # 30s for 1 hour
+./scripts/logs.sh monitor [...]   # explicit form of the default
+./scripts/logs.sh search  [...]   # grep captured raw logs
+./scripts/logs.sh analyse [...]   # run probes, write analysis.md/json
+```
+
+## Common options
+
+```bash
+./scripts/logs.sh --interval 5 --iterations 720       # 5s × 1h
+./scripts/logs.sh --run-id "incident-pr349"           # custom slug
+./scripts/logs.sh --analyse-every 30s                 # tighter snapshots
+./scripts/logs.sh --analyse-every 0                   # disable snapshots
+./scripts/logs.sh --app hover,hover-worker            # subset of apps
+
+./scripts/logs.sh search --keyword panic --keyword pgx
+./scripts/logs.sh search --regex 'status[":]+5\d\d' --app hover
+
+./scripts/logs.sh analyse --keyword "deadline exceeded"
+./scripts/logs.sh analyse --run 20260502/1430_mellow-rose_3s_1h
 ```
 
 ## Output structure
 
 ```
-logs/YYYYMMDD/HHMM_<name>_<interval>s_<duration>h/
-├── raw/
-│   ├── <timestamp>_iter1.log
-│   ├── <timestamp>_iter2.log
-│   └── ...
-├── <timestamp>_iter1.json
-├── <timestamp>_iter2.json
-├── time_series.csv
-└── summary.md
+logs/YYYYMMDD/HHMM_<slug>_<settings>/
+├── <app>/raw/*.log          # cursor-filtered captures (one per iteration)
+├── <app>/.cursor            # last-seen ISO timestamp per app
+├── snapshots/
+│   ├── analysis_<HHMMSS>Z.md
+│   └── analysis_<HHMMSS>Z.json
+├── analysis.md              # final probe report
+├── analysis.json
+└── monitor.log              # verbose run history
 ```
 
-## What it captures
+## Probes (analyse)
 
-- Raw log samples from Fly
-- JSON summaries per iteration
-- Aggregated time series data
-- Summary markdown report
+Severity, panics & fatals, HTTP status, latency (p50/p95/p99 + slowest),
+heartbeat, process health, autoscaler, database/external errors, Sentry, plus
+any ad-hoc `--keyword`/`--regex`. Every finding records `count`, `first_seen`,
+`last_seen`, and `peak` (timestamp of the highest-count minute).
 
-Automatic aggregation runs via `scripts/aggregate_logs.py` after each iteration.
+The legacy `scripts/monitor_logs.sh` still works — it forwards to
+`logs.sh monitor`.
