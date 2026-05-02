@@ -294,29 +294,52 @@ logic ├── crawler/ # Web crawling functionality ├── db/ # Database o
 
 ## Monitoring Fly Logs
 
-For production investigations use `scripts/monitor_logs.sh`:
+For production investigations use `scripts/logs.sh`:
 
 ```bash
-# Default: 10-second intervals for 4 hours
-./scripts/monitor_logs.sh
+# Default: 3-second capture across all five Fly apps, 5-minute analyse
+# snapshots, ~72 minutes total. Press Ctrl+C to stop early — the final
+# report still writes.
+./scripts/logs.sh
 
-# Custom run with descriptive name
-./scripts/monitor_logs.sh --run-id "heavy-load-test"
+# Custom slug, longer interval and duration
+./scripts/logs.sh --interval 30 --iterations 120 --run-id "30min-check"
 
-# Custom intervals and duration
-./scripts/monitor_logs.sh --interval 30 --iterations 120 --run-id "30min-check"
+# Tighter snapshot cadence, or disable snapshots
+./scripts/logs.sh --analyse-every 30s
+./scripts/logs.sh --analyse-every 0
 ```
+
+`logs.sh` has three subcommands sharing the same run layout:
+
+```bash
+./scripts/logs.sh search --keyword panic --keyword pgx
+./scripts/logs.sh analyse --keyword "deadline exceeded"
+./scripts/logs.sh analyse --run 20260502/1430_mellow-rose_3s_1h
+```
+
+The legacy `scripts/monitor_logs.sh` still works — it forwards to
+`./scripts/logs.sh monitor`.
 
 **Output structure:**
 
-- Folder: `logs/YYYYMMDD/HHMM_<name>_<interval>s_<duration>h/`
-  - Example: `logs/20251105/0833_heavy-load-test_10s_4h/`
-- Raw logs: `raw/<timestamp>_iter<N>.log`
-- JSON summaries: `<timestamp>_iter<N>.json`
-- Aggregated outputs:
-  - `time_series.csv` - per-minute log level counts
-  - `summary.md` - human-readable report with critical patterns
-  - Automatically regenerated after each iteration
+- Run dir: `logs/YYYYMMDD/HHMM_<slug>_<interval>s_<duration>/`
+  - Example: `logs/20260502/1430_mellow-rose_3s_1h/`
+- Per-app captures: `<app>/raw/<timestamp>_iter<N>.log` (cursor-filtered against
+  `<app>/.cursor` so each iteration only persists lines newer than the previous)
+- Per-iteration JSON: `<app>/<timestamp>_iter<N>.json`
+- Aggregated outputs (per app):
+  - `time_series.csv` — per-minute log level counts
+  - `summary.md` — human-readable per-app report
+- Cross-app analysis (whole run):
+  - `analysis.md` / `analysis.json` — final probe report (severity, panics,
+    HTTP, latency, heartbeat, process health, autoscaler, DB/external, Sentry,
+    ad-hoc keywords) with `first_seen` / `last_seen` / `peak` timestamps for
+    every finding
+  - `snapshots/analysis_<HHMMSS>Z.{md,json}` — point-in-time snapshots written
+    every `--analyse-every` while the run is in progress
+- `monitor.log` — verbose run history (cleanup, per-iteration capture, errors).
+  The TTY shows only a startup banner and a self-overwriting ticker.
 
 **Defaults:**
 

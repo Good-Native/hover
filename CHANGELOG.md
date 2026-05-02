@@ -32,6 +32,34 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.3] – 2026-05-02
+
+### Added
+
+- `scripts/logs.sh` unified Fly log tool with `monitor`, `search`, and `analyse`
+  subcommands. Bare `logs.sh` runs `monitor` with all defaults (3s capture
+  across all five Fly apps, 5-minute analyse snapshots, final report at run
+  end). `search` greps captured raw logs by keyword/regex across one or more
+  runs (case-insensitive by default, also reads `raw.zip` after cleanup).
+  `analyse` runs a fixed probe set — severity, panics, HTTP status, latency,
+  heartbeat, process health, autoscaler, database/external errors, Sentry, plus
+  ad-hoc keywords — and writes `analysis.{md,json}` with `first_seen`,
+  `last_seen`, and `peak` timestamps for every finding.
+- `scripts/filter_since.py` per-app cursor filter wired into `capture_app` so
+  each iteration only persists log lines newer than the previous capture,
+  eliminating the 4× overlap inflation that came from `flyctl logs --no-tail`.
+
+### Changed
+
+- `scripts/monitor_logs.sh` reduced to a back-compat shim that forwards all
+  flags to `logs.sh monitor`. Existing call sites in `opencode.json`,
+  `.claude/commands/monitor.md`, `.claude/settings.local.json`, and
+  `docs/development/DEVELOPMENT.md` continue to work unchanged.
+- Default monitor app list now includes the two autoscaler sidecars
+  (`hover-autoscaler-worker`, `hover-autoscaler-analysis`).
+- Default `--run-id` is auto-generated as a `<adjective>-<colour>` slug (e.g.
+  `mellow-rose`) so concurrent runs are easy to distinguish.
+
 ## [0.34.2] – 2026-05-02
 
 ### Added

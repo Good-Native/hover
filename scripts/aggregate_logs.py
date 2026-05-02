@@ -404,7 +404,10 @@ if __name__ == "__main__":
     parser.add_argument("--full", action="store_true", help="Full reprocess (ignore state)")
     args = parser.parse_args()
 
-    if args.watch:
-        watch_mode(args.log_dir, args.interval)
-    else:
-        aggregate_logs(args.log_dir, incremental=not args.full)
+    try:
+        if args.watch:
+            watch_mode(args.log_dir, args.interval)
+        else:
+            aggregate_logs(args.log_dir, incremental=not args.full)
+    except KeyboardInterrupt:
+        sys.exit(130)
