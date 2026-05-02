@@ -26,16 +26,14 @@ Run `logs.sh <command> --help` for command-specific options.
 USAGE
 }
 
-# Probe a candidate interpreter and confirm it's Python 3+. Echoes nothing on
-# success; non-zero exit means the candidate isn't usable.
+# Probe a candidate interpreter and confirm it's Python 3.10+. The Python
+# helpers use `itertools.pairwise` (3.10+) so 3.9 would import-fail at runtime.
 _is_python3() {
-    "$@" -c "import sys; sys.exit(0 if sys.version_info[0] >= 3 else 1)" \
+    "$@" -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" \
         >/dev/null 2>&1
 }
 
-# Locate a working Python 3 interpreter shared by search/analyse helpers.
-# `python` on some systems is still 2.x, so just `import sys` isn't enough —
-# we explicitly check `sys.version_info[0] >= 3`.
+# Locate a working Python 3.10+ interpreter shared by search/analyse helpers.
 resolve_python() {
     if command -v python3 >/dev/null 2>&1 && _is_python3 python3; then
         PYTHON_CMD="python3"
@@ -47,7 +45,7 @@ resolve_python() {
         PYTHON_CMD="py"
         PYTHON_ARGS=(-3)
     else
-        echo "Python 3 is required for this command but was not found." >&2
+        echo "Python 3.10+ is required for this command but was not found." >&2
         exit 1
     fi
 }
@@ -600,7 +598,9 @@ USAGE
             log_to_file "[$app] Failed to process logs (see output above)"
             return
         fi
-        env PYTHONUTF8=1 "$PYTHON_CMD" "${PYTHON_ARGS[@]+"${PYTHON_ARGS[@]}"}" "$SCRIPT_DIR/aggregate_logs.py" "$RUN_DIR/$app" >> "$LOG_FILE" 2>&1
+        if ! env PYTHONUTF8=1 "$PYTHON_CMD" "${PYTHON_ARGS[@]+"${PYTHON_ARGS[@]}"}" "$SCRIPT_DIR/aggregate_logs.py" "$RUN_DIR/$app" >> "$LOG_FILE" 2>&1; then
+            log_to_file "[$app] Failed to aggregate logs (see output above)"
+        fi
     }
 
     run_snapshot_analyse() {
@@ -699,7 +699,9 @@ USAGE
     else
         log_to_file "Running final aggregation..."
         for app in "${APPS[@]}"; do
-            env PYTHONUTF8=1 "$PYTHON_CMD" "${PYTHON_ARGS[@]+"${PYTHON_ARGS[@]}"}" "$SCRIPT_DIR/aggregate_logs.py" "$RUN_DIR/$app" >> "$LOG_FILE" 2>&1
+            if ! env PYTHONUTF8=1 "$PYTHON_CMD" "${PYTHON_ARGS[@]+"${PYTHON_ARGS[@]}"}" "$SCRIPT_DIR/aggregate_logs.py" "$RUN_DIR/$app" >> "$LOG_FILE" 2>&1; then
+                log_to_file "[$app] Final aggregation failed (see output above)"
+            fi
         done
         log_to_file "Aggregation complete"
 
