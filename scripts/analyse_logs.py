@@ -322,7 +322,10 @@ class HeartbeatProbe(Probe):
         #   (2) entirely missing — fell between two observed minutes with no
         #       log lines at all, so `minute_seen` doesn't include it.
         if median >= 1:
-            for m in minutes:
+            # Skip the first and last observed minutes — they're typically
+            # partial windows (capture started or stopped mid-minute), so a
+            # zero info-count there is expected, not a real heartbeat gap.
+            for m in minutes[1:-1]:
                 if self.minute_info.get(m, 0) == 0:
                     gap_minutes.add(m)
             if len(minutes) >= 2:
