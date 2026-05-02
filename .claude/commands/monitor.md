@@ -40,7 +40,7 @@ still writes.
 
 ## Output structure
 
-```
+```text
 logs/YYYYMMDD/HHMM_<slug>_<settings>/
 ├── <app>/raw/*.log          # cursor-filtered captures (one per iteration)
 ├── <app>/.cursor            # last-seen ISO timestamp per app
