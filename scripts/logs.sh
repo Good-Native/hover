@@ -286,7 +286,10 @@ USAGE
     # `monitor.log` writes (which use the *_plain variables) never carry codes.
     if [[ "$USE_TICKER" == "true" ]]; then
         C_BOLD=$'\033[1m'
-        C_DIM=$'\033[2m'
+        # Bright-black foreground (a.k.a. grey) rather than \033[2m dim — many
+        # terminals (VS Code's included) render the dim attribute by altering
+        # the background, which produces a visible black box behind the text.
+        C_DIM=$'\033[90m'
         C_CYAN=$'\033[36m'
         C_GREEN=$'\033[32m'
         C_YELLOW=$'\033[33m'
@@ -309,8 +312,8 @@ USAGE
     fmt_duration() {
         local s=$1
         if (( s < 60 )); then printf "%ds" "$s"; return; fi
-        if (( s < 3600 )); then printf "%dm%ds" $((s/60)) $((s%60)); return; fi
-        printf "%dh%dm" $((s/3600)) $(( (s%3600)/60 ))
+        if (( s < 3600 )); then printf "%dm %ds" $((s/60)) $((s%60)); return; fi
+        printf "%dh %dm" $((s/3600)) $(( (s%3600)/60 ))
     }
     ticker_done() {
         if [[ "$USE_TICKER" == "true" ]]; then
@@ -329,9 +332,11 @@ USAGE
     TICKER_ANIMATOR_PID=""
 
     write_ticker_state() {
-        # Single line: iter iter_max start_epoch last_analyse_epoch analyse_every
-        printf '%d %d %d %d %d\n' \
-            "$iteration" "$ITERATIONS" "$start_epoch" "$last_analyse_epoch" "$ANALYSE_EVERY_SECONDS" \
+        # Single line:
+        # iter iter_max start_epoch last_analyse_epoch analyse_every captured_total
+        printf '%d %d %d %d %d %d\n' \
+            "$iteration" "$ITERATIONS" "$start_epoch" "$last_analyse_epoch" \
+            "$ANALYSE_EVERY_SECONDS" "$CAPTURED_TOTAL" \
             > "$TICKER_STATE_FILE"
     }
 
@@ -339,30 +344,31 @@ USAGE
         local idx=0
         local frames=(◐ ◓ ◑ ◒)
         local n=${#frames[@]}
-        local iter_num iter_max s_epoch a_epoch a_every
-        local now elapsed elapsed_fmt iter_styled snap_styled until_snap snap_fmt spin
+        local iter_num iter_max s_epoch a_epoch a_every captured
+        local now elapsed elapsed_fmt iter_styled iter_max_part snap_part until_snap snap_fmt spin
         while [[ -f "$TICKER_STATE_FILE" ]]; do
-            if read -r iter_num iter_max s_epoch a_epoch a_every < "$TICKER_STATE_FILE" 2>/dev/null \
+            if read -r iter_num iter_max s_epoch a_epoch a_every captured \
+                < "$TICKER_STATE_FILE" 2>/dev/null \
                 && [[ -n "${iter_num:-}" ]]; then
                 now=$(date +%s)
                 elapsed=$(( now - s_epoch ))
                 elapsed_fmt=$(fmt_duration $elapsed)
                 if [[ "$iter_max" -gt 0 ]]; then
-                    iter_styled="iter ${C_BOLD}${C_CYAN}${iter_num}${C_RESET}/${iter_max}"
+                    iter_max_part=" / ${iter_max}"
                 else
-                    iter_styled="iter ${C_BOLD}${C_CYAN}${iter_num}${C_RESET}"
+                    iter_max_part=""
                 fi
                 if [[ "$a_every" -gt 0 ]]; then
                     until_snap=$(( a_every - (now - a_epoch) ))
                     (( until_snap < 0 )) && until_snap=0
                     snap_fmt=$(fmt_duration $until_snap)
-                    snap_styled=" ${C_DIM}· next snapshot in ${snap_fmt}${C_RESET}"
+                    snap_part=" ${C_DIM}-${C_RESET} ${C_DIM}next snapshot ${snap_fmt}${C_RESET}"
                 else
-                    snap_styled=""
+                    snap_part=""
                 fi
                 spin="${frames[$idx]}"
-                printf "\r\033[K   ${C_BOLD}${C_CYAN}%s${C_RESET}  %s ${C_DIM}·${C_RESET} elapsed ${C_BOLD}${C_CYAN}%s${C_RESET}%s" \
-                    "$spin" "$iter_styled" "$elapsed_fmt" "$snap_styled"
+                printf "\r\033[K   ${C_BOLD}${C_CYAN}%s${C_RESET} ${C_BOLD}${C_CYAN}%s${C_RESET} ${C_DIM}-${C_RESET} ${C_BOLD}${C_CYAN}%s${C_RESET}%s ${C_DIM}-${C_RESET} ${C_BOLD}${C_CYAN}%s${C_RESET} logs%s" \
+                    "$spin" "$elapsed_fmt" "$iter_num" "$iter_max_part" "$captured" "$snap_part"
             fi
             idx=$(( (idx + 1) % n ))
             sleep 0.2
@@ -385,7 +391,7 @@ USAGE
         ticker_done
         emit_styled \
             "Stop requested — finishing up..." \
-            "${C_BOLD}${C_YELLOW}Stop requested${C_RESET} — finishing current iteration and writing final report..."
+            "${C_BOLD}${C_YELLOW}Stop requested${C_RESET} — final iteration & report..."
     }
     trap on_interrupt INT TERM
 
@@ -410,8 +416,8 @@ USAGE
                         stop_ticker_animator
                         ticker_done
                         emit_styled \
-                            "Stop requested (q) — finishing current iteration and writing final report..." \
-                            "${C_BOLD}${C_YELLOW}Stop requested${C_RESET} (q) — finishing current iteration and writing final report..."
+                            "Stop requested (q) — final iteration & report..." \
+                            "${C_BOLD}${C_YELLOW}Stop requested${C_RESET} (q) — final iteration & report..."
                         return
                         ;;
                     *) ;;  # ignore stray keystrokes, keep polling
@@ -508,12 +514,13 @@ USAGE
         echo "[$(iso_ts)] $line" >> "$LOG_FILE"
     }
     print_kv() {
-        # Indented key/value line. Key gets bold styling; value stays plain.
+        # Indented key/value line. Key in default weight; value dimmed (grey)
+        # so the eye lands on the slug + ticker, not the static config block.
         # 3-space indent so the key column aligns with the slug label in the
         # top rule (which sits at column 3, after `── `).
         local key="$1" value="$2"
         if [[ "$USE_TICKER" == "true" ]]; then
-            printf "   ${C_BOLD}%-10s${C_RESET}  %s\n" "$key" "$value"
+            printf "   %-10s  ${C_DIM}%s${C_RESET}\n" "$key" "$value"
         else
             printf "   %-10s  %s\n" "$key" "$value"
         fi
@@ -532,7 +539,7 @@ USAGE
                 first=false
             else
                 if [[ "$USE_TICKER" == "true" ]]; then
-                    printf "%s%s\n" "$cont_indent" "$line"
+                    printf "%s${C_DIM}%s${C_RESET}\n" "$cont_indent" "$line"
                 else
                     printf "%s%s\n" "$cont_indent" "$line"
                 fi
@@ -545,6 +552,7 @@ USAGE
     print_kv "Run" "$RUN_DIR"
     print_kv_wrapped "Apps" "$APPS_JOINED"
     print_kv "Interval" "${INTERVAL}s"
+    print_kv "Samples" "${SAMPLES} lines/fetch"
     print_kv "Iterations" "${ITERATIONS}${DURATION_HINT}"
     print_kv "Snapshots" "$SNAP_HINT"
     if [[ "$USE_TICKER" == "true" && -t 0 ]]; then
@@ -613,6 +621,7 @@ USAGE
     iteration=0
     start_epoch=$(date +%s)
     last_analyse_epoch=$start_epoch
+    CAPTURED_TOTAL=0
 
     # Kick off the background animator before the first capture so the
     # ticker line is alive from t=0.
@@ -640,6 +649,16 @@ USAGE
         done
         for pid in "${capture_pids[@]}"; do
             wait "$pid" 2>/dev/null || true
+        done
+
+        # Tally lines persisted this iteration (cursor-filtered, so reflects
+        # genuinely new log lines, not the flyctl --no-tail window).
+        for app in "${APPS[@]}"; do
+            raw="$RUN_DIR/$app/raw/${ts}_iter${iteration}.log"
+            if [[ -f "$raw" ]]; then
+                n=$(wc -l < "$raw" 2>/dev/null | tr -d ' ')
+                CAPTURED_TOTAL=$(( CAPTURED_TOTAL + ${n:-0} ))
+            fi
         done
 
         if [[ "$ANALYSE_EVERY_SECONDS" -gt 0 ]]; then
