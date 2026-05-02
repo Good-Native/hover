@@ -30,19 +30,17 @@ On merge, CI will:
 
 ### Added
 
-- Sentry events now carry `app`, `region`, `process`, `release`, and
-  `server_name` tags read from Fly env vars (`FLY_APP_NAME`, `FLY_REGION`,
-  `FLY_RELEASE_VERSION` → `FLY_IMAGE_REF` fallback, `FLY_MACHINE_ID`). Staging
-  events were previously emitted with no release or app attribution, so review
-  app bursts couldn't be pinned to a specific deploy. New helpers
-  `logging.InitSentry` and `observability.StartMetricsServer` wrap the
-  duplicated bootstrap across `cmd/app`, `cmd/worker`, and `cmd/analysis`.
+- Sentry events now carry `app`, `process`, `region`, and `server_name` tags
+  identifying the Fly app, binary, region, and machine that emitted them.
+  Review-app errors previously had none of these, so bursts couldn't be
+  attributed to a specific deploy. New helpers `logging.InitSentry` and
+  `observability.StartMetricsServer` centralise the duplicated bootstrap across
+  `cmd/app`, `cmd/worker`, and `cmd/analysis`.
 
 ### Fixed
 
 - `cmd/analysis` now gracefully shuts down its metrics HTTP server on SIGTERM;
-  previously it spawned the listener but never called `Shutdown`, leaving the
-  port held during termination.
+  previously it spawned the listener but never called `Shutdown`.
 
 ## Full changelog history
 
