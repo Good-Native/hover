@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Filter Fly log lines from stdin against a per-app timestamp cursor.
+
+Keeps only lines whose leading ISO timestamp is strictly greater than the
+cursor stored at the given path, then updates the cursor to the max timestamp
+seen. Used by `logs.sh monitor` so overlapping `flyctl logs --no-tail` captures
+only persist new lines per iteration.
+
+Lines without a parseable leading timestamp pass through untouched — they're
+typically multi-line stack-trace continuations and are worth preserving.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+LEADING_TS_RE = re.compile(
+    r"^\s*(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)"
+)
+
+
+def _normalise(ts: str) -> str:
+    """Normalise to a lexicographically-comparable form (Z -> +00:00)."""
+    return ts.replace("Z", "+00:00")
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print("usage: filter_since.py <cursor_file>", file=sys.stderr)
+        return 2
+
+    cursor_path = Path(sys.argv[1])
+    cursor = ""
+    if cursor_path.exists():
+        cursor = cursor_path.read_text(encoding="utf-8").strip()
+
+    new_max = cursor
+    out = sys.stdout
+    for line in sys.stdin:
+        clean = ANSI_RE.sub("", line)
+        m = LEADING_TS_RE.match(clean)
+        if not m:
+            out.write(line)
+            continue
+        ts = _normalise(m.group(1))
+        if cursor and ts <= cursor:
+            continue
+        out.write(line)
+        if ts > new_max:
+            new_max = ts
+
+    if new_max and new_max != cursor:
+        cursor_path.parent.mkdir(parents=True, exist_ok=True)
+        cursor_path.write_text(new_max, encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
