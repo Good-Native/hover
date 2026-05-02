@@ -39,16 +39,24 @@ def main() -> int:
 
     new_max = cursor
     out = sys.stdout
+    # Multi-line records (e.g. Go panic stack traces) only stamp a timestamp on
+    # the first line. Track whether the most recent header was emitted so we
+    # don't re-persist continuation lines whose header was dropped by the
+    # cursor — that would reintroduce duplicates this filter exists to remove.
+    header_emitted = False
     for line in sys.stdin:
         clean = ANSI_RE.sub("", line)
         m = LEADING_TS_RE.match(clean)
         if not m:
-            out.write(line)
+            if header_emitted:
+                out.write(line)
             continue
         ts = _normalise(m.group(1))
         if cursor and ts <= cursor:
+            header_emitted = False
             continue
         out.write(line)
+        header_emitted = True
         if ts > new_max:
             new_max = ts
 

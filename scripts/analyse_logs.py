@@ -19,7 +19,7 @@ import statistics
 import sys
 import zipfile
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterator
 
@@ -305,16 +305,30 @@ class HeartbeatProbe(Probe):
             self.minute_info[m] += 1
 
     def report(self) -> dict:
-        if not self.minute_info:
-            return {"name": self.name, "findings": [], "note": "no info-level traffic"}
-        minutes = sorted(self.minute_info.keys())
-        counts = [self.minute_info[m] for m in minutes]
-        median = statistics.median(counts) if counts else 0
+        if not self.minute_seen:
+            return {"name": self.name, "findings": [], "note": "no timestamped traffic"}
+        minutes = sorted(set(self.minute_seen))
+        non_zero = [self.minute_info[m] for m in minutes if self.minute_info[m] > 0]
+        median = statistics.median(non_zero) if non_zero else 0
         gaps: list[dict] = []
-        if median >= 1:
-            for m in minutes[1:-1]:
-                if self.minute_info[m] == 0:
-                    gaps.append({"minute": m, "expected_min": int(median)})
+        # Walk consecutive observed minutes and flag any wall-clock minute that
+        # fell entirely between them with no log lines. Without this we'd never
+        # report a gap, since `minute_seen` only contains minutes that *had*
+        # traffic.
+        if median >= 1 and len(minutes) >= 2:
+            for prev, curr in zip(minutes, minutes[1:]):
+                try:
+                    p = datetime.strptime(prev, "%Y-%m-%dT%H:%M")
+                    c = datetime.strptime(curr, "%Y-%m-%dT%H:%M")
+                except ValueError:
+                    continue
+                step = p + timedelta(minutes=1)
+                while step < c and len(gaps) < 200:
+                    gaps.append({
+                        "minute": step.strftime("%Y-%m-%dT%H:%M"),
+                        "expected_min": int(median),
+                    })
+                    step += timedelta(minutes=1)
         return {
             "name": self.name,
             "median_info_per_minute": median,
@@ -533,8 +547,15 @@ def main() -> int:
     if not runs:
         print(f"No runs matched under {root} (run={args.run!r})", file=sys.stderr)
         return 1
-    if len(runs) > 1 and not args.out:
-        print(f"Resolved {len(runs)} runs; pass --run to pick one or --out to combine.", file=sys.stderr)
+    if len(runs) > 1:
+        # Each run writes to its own analysis.{md,json} under its run dir; with
+        # --out a single base path is shared, which would silently overwrite
+        # earlier runs. Combined output isn't implemented yet, so require a
+        # single-run selection.
+        print(
+            f"Resolved {len(runs)} runs; pass --run to select a single run.",
+            file=sys.stderr,
+        )
         return 2
 
     apps = [a.strip() for a in args.app.split(",") if a.strip()] or None

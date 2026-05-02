@@ -140,6 +140,9 @@ def main() -> int:
     if not args.keyword and not args.regex:
         print("Provide at least one --keyword or --regex.", file=sys.stderr)
         return 2
+    if args.max < 0:
+        print("--max must be >= 0 (0 = unlimited).", file=sys.stderr)
+        return 2
 
     parts = [re.escape(k) for k in args.keyword] + list(args.regex)
     flags = 0 if args.case_sensitive else re.IGNORECASE

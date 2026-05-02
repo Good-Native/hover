@@ -82,16 +82,17 @@ parse_duration() {
 }
 
 cmd_monitor() {
-    APP="hover,hover-worker,hover-analysis,hover-autoscaler-worker,hover-autoscaler-analysis"
-    INTERVAL=3
-    SAMPLES=400
-    ITERATIONS=1440  # ~72 minutes at 3s intervals
-    RUN_ID=""
-    OUTPUT_ROOT="logs"
-    CLEANUP_OLD=true
-    CLEANUP_DAYS=1
-    CLEANUP_MODE="zip"
-    ANALYSE_EVERY="5m"
+    # Defaults; environment variables of the same name take precedence.
+    APP="${APP:-hover,hover-worker,hover-analysis,hover-autoscaler-worker,hover-autoscaler-analysis}"
+    INTERVAL="${INTERVAL:-3}"
+    SAMPLES="${SAMPLES:-400}"
+    ITERATIONS="${ITERATIONS:-1440}"  # ~72 minutes at 3s intervals
+    RUN_ID="${RUN_ID:-}"
+    OUTPUT_ROOT="${OUTPUT_ROOT:-logs}"
+    CLEANUP_OLD="${CLEANUP_OLD:-true}"
+    CLEANUP_DAYS="${CLEANUP_DAYS:-1}"
+    CLEANUP_MODE="${CLEANUP_MODE:-zip}"
+    ANALYSE_EVERY="${ANALYSE_EVERY:-5m}"
     PYTHON_CMD=""
     PYTHON_ARGS=()
 
@@ -131,24 +132,28 @@ RUN_ID) override the defaults as well.
 USAGE
     }
 
-    # Allow environment variables to override defaults.
-    APP=${APP:-$APP}
-    INTERVAL=${INTERVAL:-$INTERVAL}
-    SAMPLES=${SAMPLES:-$SAMPLES}
-    ITERATIONS=${ITERATIONS:-$ITERATIONS}
-    RUN_ID=${RUN_ID:-$RUN_ID}
+    require_value() {
+        # Bail on missing values for options that take an argument so a stray
+        # `logs.sh monitor --app` fails with a readable message instead of
+        # tripping `set -u` on the unbound `$2` expansion below.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+            echo "Missing value for $1" >&2
+            monitor_usage
+            exit 2
+        fi
+    }
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --app)            APP="$2"; shift 2 ;;
-            --interval)       INTERVAL="$2"; shift 2 ;;
-            --samples)        SAMPLES="$2"; shift 2 ;;
-            --iterations)     ITERATIONS="$2"; shift 2 ;;
-            --run-id)         RUN_ID="$2"; shift 2 ;;
-            --analyse-every)  ANALYSE_EVERY="$2"; shift 2 ;;
+            --app)            require_value "$@"; APP="$2"; shift 2 ;;
+            --interval)       require_value "$@"; INTERVAL="$2"; shift 2 ;;
+            --samples)        require_value "$@"; SAMPLES="$2"; shift 2 ;;
+            --iterations)     require_value "$@"; ITERATIONS="$2"; shift 2 ;;
+            --run-id)         require_value "$@"; RUN_ID="$2"; shift 2 ;;
+            --analyse-every)  require_value "$@"; ANALYSE_EVERY="$2"; shift 2 ;;
             --no-cleanup)     CLEANUP_OLD=false; shift ;;
-            --cleanup-days)   CLEANUP_DAYS="$2"; shift 2 ;;
-            --cleanup-mode)   CLEANUP_MODE="$2"; shift 2 ;;
+            --cleanup-days)   require_value "$@"; CLEANUP_DAYS="$2"; shift 2 ;;
+            --cleanup-mode)   require_value "$@"; CLEANUP_MODE="$2"; shift 2 ;;
             -h|--help)        monitor_usage; exit 0 ;;
             *)
                 echo "Unknown option: $1" >&2
