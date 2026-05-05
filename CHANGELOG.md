@@ -28,7 +28,12 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Changed
+
+- Repository moved from `Harvey-AU` to `good-native` GitHub org. Go module path
+  is now `github.com/good-native/hover` and npm package is `@good-native/hover`.
+  CI runners switched from Blacksmith to GitHub-hosted `ubuntu-24.04` pending
+  Blacksmith setup on the new org.
 
 ## Full changelog history
 
