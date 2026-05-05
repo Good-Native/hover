@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/Harvey-AU/hover/internal/logging"
+	"github.com/good-native/hover/internal/logging"
 	wappalyzer "github.com/projectdiscovery/wappalyzergo"
 )
 

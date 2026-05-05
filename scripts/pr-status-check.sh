@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-REPO_OWNER="Harvey-AU"
+REPO_OWNER="good-native"
 REPO_NAME="hover"
 REPO="$REPO_OWNER/$REPO_NAME"
 

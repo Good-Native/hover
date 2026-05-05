@@ -14,7 +14,7 @@ if (!fs.existsSync(binary)) {
   console.error(
     "hover binary is missing or failed to extract during installation."
   );
-  console.error("Try: npm rebuild -g @harvey-au/hover");
+  console.error("Try: npm rebuild -g @good-native/hover");
   process.exit(1);
 }
 

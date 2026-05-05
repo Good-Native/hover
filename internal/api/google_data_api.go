@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/db"
-	"github.com/Harvey-AU/hover/internal/util"
+	"github.com/good-native/hover/internal/db"
+	"github.com/good-native/hover/internal/util"
 )
 
 // GA4 API limits and constraints

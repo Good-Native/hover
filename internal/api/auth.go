@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	emailverifier "github.com/AfterShip/email-verifier"
-	"github.com/Harvey-AU/hover/internal/auth"
+	"github.com/good-native/hover/internal/auth"
 )
 
 var (

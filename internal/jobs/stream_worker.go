@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/broker"
-	"github.com/Harvey-AU/hover/internal/db"
-	"github.com/Harvey-AU/hover/internal/observability"
+	"github.com/good-native/hover/internal/broker"
+	"github.com/good-native/hover/internal/db"
+	"github.com/good-native/hover/internal/observability"
 	"golang.org/x/sync/singleflight"
 )
 

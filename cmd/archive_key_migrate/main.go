@@ -9,9 +9,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/Harvey-AU/hover/internal/archive"
-	"github.com/Harvey-AU/hover/internal/db"
-	"github.com/Harvey-AU/hover/internal/logging"
+	"github.com/good-native/hover/internal/archive"
+	"github.com/good-native/hover/internal/db"
+	"github.com/good-native/hover/internal/logging"
 	"github.com/joho/godotenv"
 )
 
