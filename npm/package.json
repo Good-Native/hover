@@ -1,5 +1,5 @@
 {
-  "name": "@harvey-au/hover",
+  "name": "@good-native/hover",
   "version": "0.0.0",
   "description": "CLI for the Hover cache-warming platform",
   "bin": {
@@ -24,7 +24,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Harvey-AU/hover"
+    "url": "https://github.com/good-native/hover"
   },
   "license": "MIT"
 }

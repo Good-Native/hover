@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/logging"
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/good-native/hover/internal/logging"
 )
 
 var authLog = logging.Component("auth")

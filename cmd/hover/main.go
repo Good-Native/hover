@@ -65,7 +65,7 @@ func checkAndUpdate() {
 		return
 	}
 	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get("https://api.github.com/repos/Harvey-AU/hover/git/matching-refs/tags/cli-v")
+	resp, err := client.Get("https://api.github.com/repos/good-native/hover/git/matching-refs/tags/cli-v")
 	if err != nil {
 		return
 	}
@@ -94,11 +94,11 @@ func checkAndUpdate() {
 	}
 
 	fmt.Fprintf(os.Stderr, "Updating hover v%s → v%s...\n", version, latest)
-	cmd := exec.Command("npm", "install", "-g", "@harvey-au/hover")
+	cmd := exec.Command("npm", "install", "-g", "@good-native/hover")
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Auto-update failed: %v\nRun manually: npm install -g @harvey-au/hover\n", err)
+		fmt.Fprintf(os.Stderr, "Auto-update failed: %v\nRun manually: npm install -g @good-native/hover\n", err)
 	} else {
 		fmt.Fprintf(os.Stderr, "Updated to v%s — restart hover to use new version.\n\n", latest)
 	}

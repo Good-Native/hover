@@ -1,4 +1,4 @@
-module github.com/Harvey-AU/hover
+module github.com/good-native/hover
 
 go 1.26.2
 

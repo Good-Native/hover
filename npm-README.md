@@ -1,11 +1,11 @@
-# @harvey-au/hover
+# @good-native/hover
 
 CLI for the Hover cache-warming platform.
 
 ## Install
 
 ```sh
-npm install -g @harvey-au/hover
+npm install -g @good-native/hover
 ```
 
 ## Usage
@@ -23,5 +23,5 @@ hover jobs generate [options]
 | `--concurrency <N>` | Per-job concurrency `1-50`, or `random` | `random`        |
 | `--api-url <url>`   | Target API base URL                     | `hover.fly.dev` |
 
-See [GitHub releases](https://github.com/Harvey-AU/hover/releases) for
+See [GitHub releases](https://github.com/good-native/hover/releases) for
 changelogs.

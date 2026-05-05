@@ -16,10 +16,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/logging"
-	"github.com/Harvey-AU/hover/internal/observability"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
+	"github.com/good-native/hover/internal/logging"
+	"github.com/good-native/hover/internal/observability"
 )
 
 var crawlerLog = logging.Component("crawler")

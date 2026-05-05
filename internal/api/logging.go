@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/Harvey-AU/hover/internal/logging"
+	"github.com/good-native/hover/internal/logging"
 )
 
 var apiLog = logging.Component("api")

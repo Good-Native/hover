@@ -10,7 +10,7 @@ writes structured JSON to stdout **and** captures errors to Sentry automatically
 Every package declares a package-level logger with its component name:
 
 ```go
-import "github.com/Harvey-AU/hover/internal/logging"
+import "github.com/good-native/hover/internal/logging"
 
 var workerLog = logging.Component("worker")
 ```

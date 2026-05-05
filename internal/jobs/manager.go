@@ -14,11 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/crawler"
-	"github.com/Harvey-AU/hover/internal/db"
-	"github.com/Harvey-AU/hover/internal/logging"
-	"github.com/Harvey-AU/hover/internal/util"
 	"github.com/getsentry/sentry-go"
+	"github.com/good-native/hover/internal/crawler"
+	"github.com/good-native/hover/internal/db"
+	"github.com/good-native/hover/internal/logging"
+	"github.com/good-native/hover/internal/util"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )

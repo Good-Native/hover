@@ -1,13 +1,13 @@
 # Hover 🐝
 
-[![Fly Deploy](https://github.com/Harvey-AU/hover/actions/workflows/fly-deploy.yml/badge.svg)](https://github.com/Harvey-AU/hover/actions/workflows/fly-deploy.yml)
-[![Tests](https://github.com/Harvey-AU/hover/actions/workflows/test.yml/badge.svg)](https://github.com/Harvey-AU/hover/actions/workflows/test.yml)
-[![codecov](https://codecov.io/github/harvey-au/hover/graph/badge.svg?token=EC0JW5IU7X)](https://codecov.io/github/harvey-au/hover)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Harvey-AU/hover?style=flat)](https://goreportcard.com/report/github.com/Harvey-AU/hover)
-[![Go Reference](https://pkg.go.dev/badge/github.com/Harvey-AU/hover.svg)](https://pkg.go.dev/github.com/Harvey-AU/hover)
+[![Fly Deploy](https://github.com/good-native/hover/actions/workflows/fly-deploy.yml/badge.svg)](https://github.com/good-native/hover/actions/workflows/fly-deploy.yml)
+[![Tests](https://github.com/good-native/hover/actions/workflows/test.yml/badge.svg)](https://github.com/good-native/hover/actions/workflows/test.yml)
+[![codecov](https://codecov.io/github/good-native/hover/graph/badge.svg?token=EC0JW5IU7X)](https://codecov.io/github/good-native/hover)
+[![Go Report Card](https://goreportcard.com/badge/github.com/good-native/hover?style=flat)](https://goreportcard.com/report/github.com/good-native/hover)
+[![Go Reference](https://pkg.go.dev/badge/github.com/good-native/hover.svg)](https://pkg.go.dev/github.com/good-native/hover)
 [![Go Version](https://img.shields.io/badge/go-1.26.1-blue.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/Harvey-AU/hover/graphs/commit-activity)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/good-native/hover/graphs/commit-activity)
 
 A comprehensive website health and performance tool that monitors site health,
 detects broken links, identifies slow pages, and warms cache for optimal
@@ -50,7 +50,7 @@ Built by the Good Native team in Castlemaine, Victoria, Australia.
 
 ```bash
 # Clone the repository
-git clone https://github.com/Harvey-AU/hover.git hover
+git clone https://github.com/good-native/hover.git hover
 cd hover
 
 # Set up tracked Git hooks once per clone
@@ -127,7 +127,7 @@ See [Roadmap.md](./Roadmap.md) for detailed progress tracking.
 
 ## Support
 
-- [Report Issues](https://github.com/Harvey-AU/hover/issues)
+- [Report Issues](https://github.com/good-native/hover/issues)
 - [Security Policy](SECURITY.md)
 - Email: <hello@teamharvey.co>
 

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/db"
+	"github.com/good-native/hover/internal/db"
 )
 
 type ErrorResponse struct {

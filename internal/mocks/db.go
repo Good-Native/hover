@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/broker"
-	"github.com/Harvey-AU/hover/internal/db"
+	"github.com/good-native/hover/internal/broker"
+	"github.com/good-native/hover/internal/db"
 	"github.com/stretchr/testify/mock"
 )
 

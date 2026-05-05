@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Harvey-AU/hover/internal/logging"
+	"github.com/good-native/hover/internal/logging"
 	"golang.org/x/net/publicsuffix"
 )
 

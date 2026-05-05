@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/Harvey-AU/hover/internal/db"
+	"github.com/good-native/hover/internal/db"
 	"github.com/stretchr/testify/mock"
 )
 

@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/archive"
-	"github.com/Harvey-AU/hover/internal/observability"
+	"github.com/good-native/hover/internal/archive"
+	"github.com/good-native/hover/internal/observability"
 )
 
 // ErrMemoryShed signals the consumer to leave the row in 'running' and skip XAck so XAUTOCLAIM redelivers once memory recovers.

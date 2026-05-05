@@ -1,6 +1,6 @@
 package lighthouse
 
-import "github.com/Harvey-AU/hover/internal/logging"
+import "github.com/good-native/hover/internal/logging"
 
 // lighthouseLog is the package-scoped structured logger. Mirrors the
 // brokerLog / dbLog pattern used elsewhere in the codebase: one

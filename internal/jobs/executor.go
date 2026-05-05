@@ -16,11 +16,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/archive"
-	"github.com/Harvey-AU/hover/internal/crawler"
-	"github.com/Harvey-AU/hover/internal/db"
-	"github.com/Harvey-AU/hover/internal/observability"
-	"github.com/Harvey-AU/hover/internal/util"
+	"github.com/good-native/hover/internal/archive"
+	"github.com/good-native/hover/internal/crawler"
+	"github.com/good-native/hover/internal/db"
+	"github.com/good-native/hover/internal/observability"
+	"github.com/good-native/hover/internal/util"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )

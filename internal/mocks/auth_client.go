@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/Harvey-AU/hover/internal/auth"
+	"github.com/good-native/hover/internal/auth"
 	"github.com/stretchr/testify/mock"
 )
 

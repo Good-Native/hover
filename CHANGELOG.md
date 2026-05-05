@@ -28,7 +28,12 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Changed
+
+- Repository moved from `Harvey-AU` to `good-native` GitHub org. Go module path
+  is now `github.com/good-native/hover` and npm package is `@good-native/hover`.
+  CI runners switched from Blacksmith to GitHub-hosted `ubuntu-24.04` pending
+  Blacksmith setup on the new org.
 
 ## Full changelog history
 
@@ -545,7 +550,7 @@ _Add unreleased changes here._
   broken Grafana panels restored after metrics rename; semaphore wait corrected
   to µs
 - `hover` CLI on Windows: replaced `/bin/sh` stub with a Node launcher so
-  `npm install -g @harvey-au/hover` produces a working `hover.cmd`/`hover.ps1`
+  `npm install -g @good-native/hover` produces a working `hover.cmd`/`hover.ps1`
   shim; install script now extracts the Go binary as `hover-bin[.exe]` to avoid
   a filename collision with the launcher
 
@@ -1280,7 +1285,7 @@ _Add unreleased changes here._
 - CLI now targets production domain (`hover.app.goodnative.co`) by default
   instead of `hover.fly.dev`
 - CLI release workflow is idempotent — safe to retrigger after partial failures
-- Published `@harvey-au/hover` npm package with MIT licence
+- Published `@good-native/hover` npm package with MIT licence
 
 ## [0.31.0] – 2026-04-03
 
@@ -1294,7 +1299,7 @@ _Add unreleased changes here._
   longer required
 - Session persistence and token refresh for CLI — authenticate once, reuse
   across sessions
-- npm distribution (`npm install -g @harvey-au/hover`) with automatic binary
+- npm distribution (`npm install -g @good-native/hover`) with automatic binary
   download for macOS, Linux, and Windows
 - Independent CLI versioning — npm releases only trigger when `cmd/hover/`
   changes, with their own version counter
@@ -1382,7 +1387,7 @@ infrastructure.
   names now use `hover/*`
 - **Fly.io app name** — `fly.toml` and review app config target the `hover` app
 - **GitHub URLs** — badges, workflow refs, and repository links point to
-  `Harvey-AU/hover`
+  `good-native/hover`
 - **Go module** — `go.mod` module path updated
 - **Auth redirects** — `APP_URL` and OAuth callback references use
   `hover.app.goodnative.co`
