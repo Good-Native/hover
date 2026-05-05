@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/observability"
+	"github.com/good-native/hover/internal/observability"
 	"github.com/redis/go-redis/v9"
 )
 

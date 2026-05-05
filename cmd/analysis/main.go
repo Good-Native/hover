@@ -14,12 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/archive"
-	"github.com/Harvey-AU/hover/internal/broker"
-	"github.com/Harvey-AU/hover/internal/db"
-	"github.com/Harvey-AU/hover/internal/lighthouse"
-	"github.com/Harvey-AU/hover/internal/logging"
-	"github.com/Harvey-AU/hover/internal/observability"
+	"github.com/good-native/hover/internal/archive"
+	"github.com/good-native/hover/internal/broker"
+	"github.com/good-native/hover/internal/db"
+	"github.com/good-native/hover/internal/lighthouse"
+	"github.com/good-native/hover/internal/logging"
+	"github.com/good-native/hover/internal/observability"
 	"github.com/redis/go-redis/v9"
 )
 

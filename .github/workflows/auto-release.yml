@@ -7,7 +7,7 @@ name: Auto Release
 # - Name: "Hover Release Automation"
 # - Type: Fine-grained token
 # - Expiration: 365 days (expires ~1 year from creation)
-# - Repository: Harvey-AU/hover
+# - Repository: good-native/hover
 # - Permissions: Contents (read/write), Pull requests (read/write)
 # - Location: https://github.com/settings/tokens?type=beta
 # - Secret: 1Password vault "Good Native", item "hover-github", field "PAT_TOKEN"

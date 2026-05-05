@@ -7,10 +7,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/auth"
-	"github.com/Harvey-AU/hover/internal/broker"
-	"github.com/Harvey-AU/hover/internal/logging"
 	"github.com/getsentry/sentry-go"
+	"github.com/good-native/hover/internal/auth"
+	"github.com/good-native/hover/internal/broker"
+	"github.com/good-native/hover/internal/logging"
 	"github.com/lib/pq"
 )
 

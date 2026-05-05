@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/db"
-	"github.com/Harvey-AU/hover/internal/jobs"
-	"github.com/Harvey-AU/hover/internal/logging"
-	"github.com/Harvey-AU/hover/internal/util"
+	"github.com/good-native/hover/internal/db"
+	"github.com/good-native/hover/internal/jobs"
+	"github.com/good-native/hover/internal/logging"
+	"github.com/good-native/hover/internal/util"
 )
 
 // JobsHandler handles requests to /v1/jobs

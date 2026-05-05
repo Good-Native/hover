@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/cache"
-	"github.com/Harvey-AU/hover/internal/logging"
+	"github.com/good-native/hover/internal/cache"
+	"github.com/good-native/hover/internal/logging"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )

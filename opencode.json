@@ -78,9 +78,9 @@
 
       "gh auth *": "allow",
       "gh status": "allow",
-      "gh api repos/Harvey-AU/*/pulls/*/comments *": "allow",
-      "gh api repos/Harvey-AU/*/issues/*/comments *": "allow",
-      "gh api repos/Harvey-AU/*/pulls *": "allow",
+      "gh api repos/good-native/*/pulls/*/comments *": "allow",
+      "gh api repos/good-native/*/issues/*/comments *": "allow",
+      "gh api repos/good-native/*/pulls *": "allow",
       "gh repo view *": "allow",
       "gh pr list *": "allow",
       "gh pr view *": "allow",

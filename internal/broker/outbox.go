@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/observability"
+	"github.com/good-native/hover/internal/observability"
 	"github.com/lib/pq"
 )
 

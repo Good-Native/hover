@@ -5181,7 +5181,7 @@
         "title": "Source (GitHub)",
         "tooltip": "View source file in repository",
         "type": "link",
-        "url": "https://github.com/Harvey-AU/hover/blob/main/grafana/dashboards/hover-overview.json"
+        "url": "https://github.com/good-native/hover/blob/main/grafana/dashboards/hover-overview.json"
       }
     ],
     "liveNow": false,

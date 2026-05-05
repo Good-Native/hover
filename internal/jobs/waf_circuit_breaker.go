@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/crawler"
+	"github.com/good-native/hover/internal/crawler"
 )
 
 // blockJobDispatchTimeout bounds the detached terminal-state write

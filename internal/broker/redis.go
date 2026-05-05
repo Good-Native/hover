@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/logging"
+	"github.com/good-native/hover/internal/logging"
 	"github.com/redis/go-redis/v9"
 )
 

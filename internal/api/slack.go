@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/auth"
-	"github.com/Harvey-AU/hover/internal/db"
+	"github.com/good-native/hover/internal/auth"
+	"github.com/good-native/hover/internal/db"
 	"github.com/google/uuid"
 	"github.com/slack-go/slack"
 )

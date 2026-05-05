@@ -7,8 +7,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/Harvey-AU/hover/internal/db"
-	"github.com/Harvey-AU/hover/internal/logging"
+	"github.com/good-native/hover/internal/db"
+	"github.com/good-native/hover/internal/logging"
 	stripe "github.com/stripe/stripe-go/v82"
 	stripesubscription "github.com/stripe/stripe-go/v82/subscription"
 	"github.com/stripe/stripe-go/v82/webhook"

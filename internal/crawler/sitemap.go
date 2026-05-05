@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Harvey-AU/hover/internal/util"
+	"github.com/good-native/hover/internal/util"
 )
 
 // decompressGzip decompresses gzip-encoded data
