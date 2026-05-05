@@ -6,7 +6,7 @@ const fs = require("fs");
 const https = require("https");
 const path = require("path");
 
-const REPO = "Harvey-AU/hover";
+const REPO = "good-native/hover";
 const BIN_DIR = path.join(__dirname, "bin");
 const BIN_NAME = process.platform === "win32" ? "hover-bin.exe" : "hover-bin";
 const BIN_PATH = path.join(BIN_DIR, BIN_NAME);
