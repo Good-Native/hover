@@ -32,6 +32,13 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.5] – 2026-05-07
+
+### Changed
+
+- Migrated GitHub Actions workflows back to Blacksmith runners now that
+  Blacksmith is configured on the `good-native` org.
+
 ## [0.34.4] – 2026-05-05
 
 ### Changed
