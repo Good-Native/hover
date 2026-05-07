@@ -28,7 +28,10 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Changed
+
+- Migrated GitHub Actions workflows back to Blacksmith runners now that
+  Blacksmith is configured on the `good-native` org.
 
 ## Full changelog history
 
