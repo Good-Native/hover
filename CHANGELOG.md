@@ -28,7 +28,13 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Security
+
+- Enabled RLS (no policies) and revoked `anon`/`authenticated` grants on
+  `task_outbox`, `task_outbox_dead`, and `lighthouse_runs`; these tables are
+  only accessed by the Go server via the service role.
+- Switched the `organisation_quota_status` view to `security_invoker = true` so
+  it honours the caller's RLS rather than the creator's.
 
 ## Full changelog history
 
