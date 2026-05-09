@@ -18,33 +18,7 @@
       src="https://browser.sentry-cdn.com/10.38.0/bundle.tracing.replay.min.js"
       crossorigin="anonymous"
     ></script>
-    <script>
-      if (window.Sentry) {
-        Sentry.init({
-          dsn: "https://04f57d1dedc67f307cef525b1b1551a6@o4509113950928896.ingest.us.sentry.io/4509113952370688",
-          environment:
-            window.location.hostname === "hover.app.goodnative.co"
-              ? "production"
-              : "development",
-
-          tracesSampleRate: 0.1,
-          replaysSessionSampleRate: 0,
-          replaysOnErrorSampleRate: 1.0,
-
-          beforeSend(event) {
-            return event;
-          },
-
-          ignoreErrors: [
-            "ResizeObserver loop limit exceeded",
-            "Non-Error promise rejection captured",
-            /Failed to fetch/,
-            /NetworkError/,
-            /Load failed/,
-          ],
-        });
-      }
-    </script>
+    <script src="/js/sentry-init.js"></script>
 
     <script src="/js/core.js" defer></script>
     <script>

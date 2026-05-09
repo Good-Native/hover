@@ -10,6 +10,12 @@
     />
     <title>Hover Extension Login</title>
     <link rel="stylesheet" href="/styles/app.css" />
+    <!-- Sentry Error Monitoring & Performance -->
+    <script
+      src="https://browser.sentry-cdn.com/10.38.0/bundle.tracing.replay.min.js"
+      crossorigin="anonymous"
+    ></script>
+    <script src="/js/sentry-init.js"></script>
     <script>
       window.GNH_APP = Object.assign({}, window.GNH_APP || {}, {
         extensionAuth: true,
