@@ -2016,19 +2016,35 @@ function initExtensionAuthPage() {
     return;
   }
 
-  // Best-effort validation of the opener origin. Browsers can omit referrer
-  // headers in popup flows, so we no longer fail closed on missing referrer.
-  try {
-    const referrerOrigin = document.referrer
-      ? new URL(document.referrer).origin
-      : "";
-    if (referrerOrigin && referrerOrigin !== targetOrigin) {
-      setStatus("Origin mismatch. Please relaunch from the extension.", true);
+  // Best-effort validation of the opener origin on initial popup load.
+  // Skip when we're returning from an OAuth provider — the referrer in that
+  // case is the provider (e.g. accounts.google.com), not the original opener.
+  // targetOrigin has already been allowlisted above, so the OAuth-return path
+  // still relies on that plus the live window.opener reference.
+  const oauthReturnParams = new URLSearchParams(window.location.search);
+  const oauthReturnHash = new URLSearchParams(
+    window.location.hash.replace(/^#/, "")
+  );
+  const isOAuthReturn =
+    oauthReturnParams.has("code") ||
+    oauthReturnParams.has("error") ||
+    oauthReturnParams.has("error_code") ||
+    oauthReturnHash.has("access_token") ||
+    oauthReturnHash.has("refresh_token");
+
+  if (!isOAuthReturn) {
+    try {
+      const referrerOrigin = document.referrer
+        ? new URL(document.referrer).origin
+        : "";
+      if (referrerOrigin && referrerOrigin !== targetOrigin) {
+        setStatus("Origin mismatch. Please relaunch from the extension.", true);
+        return;
+      }
+    } catch (_error) {
+      setStatus("Unable to validate opener origin. Please relaunch.", true);
       return;
     }
-  } catch (_error) {
-    setStatus("Unable to validate opener origin. Please relaunch.", true);
-    return;
   }
 
   if (!initialiseSupabase()) {
