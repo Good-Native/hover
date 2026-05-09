@@ -79,6 +79,14 @@ async function init() {
   // Phase 2+ will replace this with a native module component.
   await loadAuthModal();
 
+  // Wire the legacy auth.js form/social-login event handlers. They use
+  // document-level delegation, so this only needs to happen once and works
+  // regardless of when the modal HTML was injected. Without this, clicking
+  // sign-in does nothing because no submit handler is bound.
+  if (typeof window.setupAuthModalHandlers === "function") {
+    window.setupAuthModalHandlers();
+  }
+
   // Handle any OAuth callback tokens already in the URL/hash.
   await handleCallbackIfPresent();
 
