@@ -18,6 +18,15 @@
       The extensionAuth flag is set inside webflow-login.js before any
       auth action, preserving the auth redirect contract from AGENTS.md.
     -->
+    <!-- Sentry Error Monitoring & Performance — loaded first so it captures
+         errors from the auth flow scripts below. -->
+    <script
+      src="https://browser.sentry-cdn.com/10.38.0/bundle.tracing.replay.min.js"
+      integrity="sha384-XDXFmBaNWlQ7XLfEYTin+MajORWXtav1ePcSXtuFHSM8q1JXxmiihPepvYcZBLqD"
+      crossorigin="anonymous"
+    ></script>
+    <script src="/js/sentry-init.js"></script>
+
     <script src="/config.js"></script>
     <script src="/js/auth.js" defer></script>
     <script
