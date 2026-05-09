@@ -32,6 +32,51 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.8] – 2026-05-09
+
+### Security
+
+- Enabled RLS (no policies) and revoked `anon`/`authenticated` grants on
+  `task_outbox`, `task_outbox_dead`, and `lighthouse_runs`; these tables are
+  only accessed by the Go server via the service role.
+- Switched the `organisation_quota_status` view to `security_invoker = true` so
+  it honours the caller's RLS rather than the creator's.
+- Revoked `anon`/`authenticated` `EXECUTE` on 19 server-internal
+  `SECURITY DEFINER` functions (OAuth token store/get/delete for Google
+  Analytics, Slack, and Webflow; vault cleanup helpers; Slack user-link helpers;
+  `increment_daily_usage`). These RPCs are only called by the Go server via the
+  service role; the three RLS-helper functions used inside policies
+  (`user_is_member_of`, `user_organisation_id`, `user_organisations`) remain
+  callable.
+
+### Performance
+
+- Rewrote 14 RLS policies on `notifications`, `daily_usage`,
+  `google_analytics_connections`, `google_analytics_accounts`, and
+  `organisation_domains` to wrap `auth.uid()` in a `(select …)` so it is
+  evaluated once per query instead of once per row.
+- Scoped the `Service role can manage usage` policy on `daily_usage`
+  `TO service_role` so it no longer fires during anon/authenticated SELECTs,
+  removing the multiple-permissive-policies overhead.
+- Pinned `search_path` on `update_job_queue_counters` and
+  `get_daily_quota_remaining`.
+- Added covering indexes on nine previously-unindexed foreign keys
+  (`google_analytics_accounts.installing_user_id`,
+  `google_analytics_connections.installing_user_id`,
+  `lighthouse_runs.source_task_id`, `organisation_invites.created_by`,
+  `page_analytics.ga_connection_id`, `platform_org_mappings.created_by`,
+  `slack_connections.installing_user_id`, `task_outbox_dead.lighthouse_run_id`,
+  `webflow_connections.installing_user_id`) so cascade deletes and FK joins no
+  longer fall back to sequential scans.
+
+### Documentation
+
+- Added
+  [`docs/security/SUPABASE_ADVISORS.md`](docs/security/SUPABASE_ADVISORS.md)
+  recording the deliberate "won't fix" advisor findings (the three RLS-helper
+  `SECURITY DEFINER` functions, the empty-policy state of `domain_hosts`) and
+  deferred items (unused indexes, Auth DB connection strategy).
+
 ## [0.34.7] – 2026-05-09
 
 ### Added
