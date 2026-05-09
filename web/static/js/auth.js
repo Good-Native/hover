@@ -39,11 +39,11 @@ if (!hasSupabaseRuntimeConfig()) {
 }
 
 // Global state
-// var (not let) so this declaration doesn't collide with the supabase UMD's
-// own top-level `var supabase` when both load on extension-auth.html — top-level
-// `let` and `var` for the same name share the realm's global lexical record
-// and throw "Identifier 'supabase' has already been declared" at parse time.
-var supabase;
+// Renamed from `supabaseClient` to avoid colliding with the supabaseClient UMD's own
+// top-level `var supabaseClient` on pages that load the SDK directly (notably
+// web/templates/extension-auth.html). Previously fixed in commit fce9849a
+// and re-applied here after the rename was lost in a merge.
+let supabaseClient = null;
 let captchaToken = null;
 const MAX_TURNSTILE_RETRIES = 2;
 let pendingSignupSubmission = null;
@@ -282,6 +282,7 @@ function getOAuthCallbackURL(params = {}) {
 function initialiseSupabase() {
   // If already initialised (client has auth property), return success
   if (window.supabase && window.supabase.auth) {
+    supabaseClient = window.supabase;
     return true;
   }
 
@@ -294,8 +295,11 @@ function initialiseSupabase() {
 
   // Otherwise, create the client from the SDK
   if (window.supabase && window.supabase.createClient) {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    window.supabase = supabase; // Ensure it's globally available
+    supabaseClient = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_ANON_KEY
+    );
+    window.supabase = supabaseClient; // Ensure it's globally available
     return true;
   }
   return false;
@@ -435,7 +439,7 @@ async function handleAuthCallback() {
       const {
         data: { session },
         error,
-      } = await supabase.auth.setSession({
+      } = await supabaseClient.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
       });
@@ -480,7 +484,7 @@ async function handleAuthCallback() {
       // Check if already authenticated
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await supabaseClient.auth.getSession();
       if (session) {
         const pendingInviteToken = getPendingInviteToken();
         if (
@@ -538,7 +542,7 @@ async function registerUserWithBackend(user) {
   }
 
   try {
-    const session = await supabase.auth.getSession();
+    const session = await supabaseClient.auth.getSession();
     if (!session.data.session) {
       console.error("No session available for registration");
       return false;
@@ -686,7 +690,7 @@ function updateAuthState(isAuthenticated) {
       ) {
         logoutBtn.addEventListener("click", async () => {
           try {
-            const { error } = await supabase.auth.signOut();
+            const { error } = await supabaseClient.auth.signOut();
             if (error) {
               console.error("Logout error:", error);
               alert("Logout failed. Please try again.");
@@ -720,7 +724,7 @@ async function updateUserInfo() {
     // Get current user from Supabase directly
     const {
       data: { session },
-    } = await supabase.auth.getSession();
+    } = await supabaseClient.auth.getSession();
 
     if (session && session.user && session.user.email) {
       const email = session.user.email;
@@ -1076,7 +1080,7 @@ async function handleEmailLogin(event) {
   clearAuthError();
 
   try {
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
       email,
       password,
     });
@@ -1169,7 +1173,7 @@ async function executeEmailSignup() {
       name: fullName || "",
     };
 
-    const { data, error } = await supabase.auth.signUp({
+    const { data, error } = await supabaseClient.auth.signUp({
       email,
       password,
       options: signupOptions,
@@ -1278,13 +1282,13 @@ async function trySendCliCallback(callbackUrlOverride) {
   }
 
   try {
-    if (!supabase) {
+    if (!supabaseClient) {
       return false;
     }
     const {
       data: { session },
       error,
-    } = await supabase.auth.getSession();
+    } = await supabaseClient.auth.getSession();
     if (error || !session) {
       return false;
     }
@@ -1378,7 +1382,7 @@ async function handlePasswordReset(event) {
   clearAuthError();
 
   try {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/dashboard`,
     });
 
@@ -1423,7 +1427,7 @@ async function handleSocialLogin(provider, options = {}) {
       window.GNH_APP?.oauthRedirectOverride ||
       (window.GNH_APP?.extensionAuth ? window.location.href : "");
 
-    const { data, error } = await supabase.auth.signInWithOAuth({
+    const { data, error } = await supabaseClient.auth.signInWithOAuth({
       provider,
       options: {
         redirectTo: redirectOverride || getOAuthRedirectTarget(),
@@ -1490,7 +1494,7 @@ async function initAuthCallbackPage() {
 
   const {
     data: { session },
-  } = await supabase.auth.getSession();
+  } = await supabaseClient.auth.getSession();
   if (session) {
     authCallbackRedirectIssued = true;
     window.location.replace("/dashboard");
@@ -1819,12 +1823,12 @@ function setupAuthHandlers() {
 
       // Ensure Supabase client is initialized before calling getSession.
       await waitForAuthScript();
-      if (!supabase || !supabase.auth) {
+      if (!supabaseClient || !supabaseClient.auth) {
         console.error("CLI auth: Supabase client not initialized");
         return;
       }
 
-      const { data } = await supabase.auth.getSession();
+      const { data } = await supabaseClient.auth.getSession();
       if (!data?.session) {
         await loadAuthModal();
         showAuthModal();
@@ -1839,12 +1843,12 @@ function initialiseAuthStateSync() {
   if (authStateSyncInitialised) {
     return true;
   }
-  if (!supabase?.auth && !initialiseSupabase()) {
+  if (!supabaseClient?.auth && !initialiseSupabase()) {
     return false;
   }
   authStateSyncInitialised = true;
 
-  supabase.auth
+  supabaseClient.auth
     .getSession()
     .then(({ data }) => {
       const session = data?.session;
@@ -1860,7 +1864,7 @@ function initialiseAuthStateSync() {
       updateAuthState(false);
     });
 
-  supabase.auth.onAuthStateChange((_event, session) => {
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
     const isAuthenticated = Boolean(session);
     updateAuthState(isAuthenticated);
     if (isAuthenticated) {
@@ -1893,7 +1897,7 @@ function scheduleAuthStateSyncRetry() {
  */
 async function handleLogout() {
   try {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabaseClient.auth.signOut();
     if (error) {
       console.error("Logout error:", error);
       alert("Logout failed. Please try again.");
@@ -2063,7 +2067,7 @@ function initExtensionAuthPage() {
     const {
       data: { session },
       error,
-    } = await supabase.auth.getSession();
+    } = await supabaseClient.auth.getSession();
 
     if (error || !session?.access_token || !session.user) {
       throw new Error(error?.message || "No active session found", {
@@ -2126,7 +2130,7 @@ function initExtensionAuthPage() {
 
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await supabaseClient.auth.getSession();
       if (session?.access_token) {
         setStatus("Existing session found. Connecting extension…");
         await sendSessionToExtension();
