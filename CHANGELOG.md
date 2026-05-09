@@ -32,6 +32,16 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.6] – 2026-05-09
+
+### Changed
+
+- Bump Go to 1.26.3 and `golang.org/x/net` to v0.53.0 to clear GO-2026-4918
+  (HTTP/2 `SETTINGS_MAX_FRAME_SIZE` infinite-loop) flagged by govulncheck.
+- Split Fly machine pool reconcile into its own CI job so downstream autoscaler
+  releases no longer block on clone-start-stop warm-up. Review apps drop their
+  per-PR pool target from 10/5 to 3/3 (analysis/worker); prod retains 10/5.
+
 ## [0.34.5] – 2026-05-07
 
 ### Changed
