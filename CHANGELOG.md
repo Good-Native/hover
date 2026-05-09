@@ -54,6 +54,22 @@ On merge, CI will:
   removing the multiple-permissive-policies overhead.
 - Pinned `search_path` on `update_job_queue_counters` and
   `get_daily_quota_remaining`.
+- Added covering indexes on nine previously-unindexed foreign keys
+  (`google_analytics_accounts.installing_user_id`,
+  `google_analytics_connections.installing_user_id`,
+  `lighthouse_runs.source_task_id`, `organisation_invites.created_by`,
+  `page_analytics.ga_connection_id`, `platform_org_mappings.created_by`,
+  `slack_connections.installing_user_id`, `task_outbox_dead.lighthouse_run_id`,
+  `webflow_connections.installing_user_id`) so cascade deletes and FK joins no
+  longer fall back to sequential scans.
+
+### Documentation
+
+- Added
+  [`docs/security/SUPABASE_ADVISORS.md`](docs/security/SUPABASE_ADVISORS.md)
+  recording the deliberate "won't fix" advisor findings (the three RLS-helper
+  `SECURITY DEFINER` functions, the empty-policy state of `domain_hosts`) and
+  deferred items (unused indexes, Auth DB connection strategy).
 
 ## Full changelog history
 
