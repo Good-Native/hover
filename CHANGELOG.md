@@ -35,6 +35,13 @@ On merge, CI will:
   only accessed by the Go server via the service role.
 - Switched the `organisation_quota_status` view to `security_invoker = true` so
   it honours the caller's RLS rather than the creator's.
+- Revoked `anon`/`authenticated` `EXECUTE` on 19 server-internal
+  `SECURITY DEFINER` functions (OAuth token store/get/delete for Google
+  Analytics, Slack, and Webflow; vault cleanup helpers; Slack user-link helpers;
+  `increment_daily_usage`). These RPCs are only called by the Go server via the
+  service role; the three RLS-helper functions used inside policies
+  (`user_is_member_of`, `user_organisation_id`, `user_organisations`) remain
+  callable.
 
 ## Full changelog history
 
