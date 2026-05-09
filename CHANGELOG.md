@@ -28,7 +28,10 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Changed
+
+- Bump Go to 1.26.3 and `golang.org/x/net` to v0.53.0 to clear GO-2026-4918
+  (HTTP/2 `SETTINGS_MAX_FRAME_SIZE` infinite-loop) flagged by govulncheck.
 
 ## Full changelog history
 
@@ -47,8 +50,6 @@ _Add unreleased changes here._
   is now `github.com/good-native/hover` and npm package is `@good-native/hover`.
   CI runners switched from Blacksmith to GitHub-hosted `ubuntu-24.04` pending
   Blacksmith setup on the new org.
-- Bump Go to 1.26.3 and `golang.org/x/net` to v0.53.0 to clear GO-2026-4918
-  (HTTP/2 SETTINGS_MAX_FRAME_SIZE infinite-loop) flagged by govulncheck.
 
 ## [0.34.3] – 2026-05-02
 
