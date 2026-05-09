@@ -19,7 +19,7 @@ on:
 jobs:
   annotate:
     name: Post test annotation
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Load Grafana annotation secrets
         continue-on-error: true

@@ -32,7 +32,7 @@ on:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       GOFLAGS: "-mod=mod"
       GOPROXY: "https://proxy.golang.org,direct"
@@ -42,7 +42,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.2"
+          go-version: "1.26.3"
           cache: true
 
       - name: Determine Go cache paths
@@ -75,14 +75,14 @@ jobs:
 
   format:
     name: Format Check
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.2"
+          go-version: "1.26.3"
           cache: true
 
       - name: Check Go formatting
@@ -119,7 +119,7 @@ jobs:
 
   unit-tests:
     name: Unit Tests
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [lint, format]
     steps:
       - uses: actions/checkout@v6
@@ -127,7 +127,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.2"
+          go-version: "1.26.3"
           cache: true
 
       - name: Run unit tests
@@ -162,7 +162,7 @@ jobs:
 
   integration-tests:
     name: Integration Tests
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [lint, format]
     steps:
       - uses: actions/checkout@v6
@@ -170,7 +170,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.2"
+          go-version: "1.26.3"
           cache: true
 
       - name: Skip database setup for dynamic preview branches
@@ -241,7 +241,7 @@ jobs:
 
   coverage-report:
     name: Coverage Report (Informational Only)
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [unit-tests, integration-tests]
     if:
       always() && (needs.unit-tests.result == 'success' ||
@@ -252,7 +252,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26.2"
+          go-version: "1.26.3"
           cache: true
 
       - name: Download coverage files

@@ -45,7 +45,7 @@ jobs:
   # Chromium) and is built independently.
   build-shared:
     name: Build hover image (API + worker)
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       image: ${{ steps.build.outputs.image }}
     steps:
@@ -66,7 +66,7 @@ jobs:
 
   build-analysis:
     name: Build hover-analysis image
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       image: ${{ steps.build.outputs.image }}
     steps:
@@ -92,7 +92,7 @@ jobs:
   # consumer is healthy before the producer starts publishing.
   release-api:
     name: Release hover (API)
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [build-shared]
     steps:
       - uses: actions/checkout@v6
@@ -135,7 +135,7 @@ jobs:
 
   release-analysis:
     name: Release hover-analysis
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [build-analysis]
     steps:
       - uses: actions/checkout@v6
@@ -171,21 +171,10 @@ jobs:
           flyctl deploy --image "$IMAGE" \
             --config fly.analysis.toml \
             --app hover-analysis
-          # Derive IMAGE_LABEL from the built image tag rather than
-          # github.run_attempt — if this release job is retried, run_attempt
-          # bumps but build-analysis.outputs.image still points to the
-          # prior build's tag. Recomputing IMAGE_LABEL from run_attempt
-          # would cause the reconciler to mistake the just-deployed
-          # machines for stragglers and destroy them.
-          IMAGE_LABEL="${IMAGE##*:}"
-          # Reconcile pre-provisioned pool: reap stale-image machines (the
-          # purpose of the historical `flyctl scale count 1` line — see
-          # PR #369) and top up to 10 stopped clones for fly-autoscaler.
-          bash scripts/fly-reconcile-pool.sh hover-analysis "$IMAGE_LABEL" 10
 
   release-worker:
     name: Release hover-worker
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Waits on build-shared for the image, and on release-analysis for
     # the consumer-before-producer invariant.
     needs: [build-shared, release-analysis]
@@ -225,12 +214,48 @@ jobs:
           flyctl deploy --image "$IMAGE" \
             --config fly.worker.toml \
             --app hover-worker
-          # Derive IMAGE_LABEL from the built image tag rather than
-          # github.run_attempt — see release-analysis for rationale.
+
+  # ───────── Pool reconcile ───────────────────────────────────────────
+  # Pool top-up runs in its own job so downstream autoscaler releases
+  # only block on the deploy itself, not on the (much slower) clone-
+  # start-stop cycle for each pre-warmed machine. IMAGE_LABEL is derived
+  # from the built image tag rather than github.run_attempt — if this
+  # job is retried, run_attempt bumps but build-*.outputs.image still
+  # points to the prior build's tag. Recomputing IMAGE_LABEL from
+  # run_attempt would cause the reconciler to mistake the just-deployed
+  # machines for stragglers and destroy them.
+  reconcile-analysis-pool:
+    name: Reconcile hover-analysis pool
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [build-analysis, release-analysis]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/fly-setup
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Reap stale-image machines and top up to 10 stopped clones
+        env:
+          IMAGE: ${{ needs.build-analysis.outputs.image }}
+        run: |
           IMAGE_LABEL="${IMAGE##*:}"
-          # Reconcile pre-provisioned pool: reap stale-image machines (the
-          # purpose of the historical `flyctl scale count 1` line — see
-          # PR #369) and top up to 5 stopped clones for fly-autoscaler.
+          bash scripts/fly-reconcile-pool.sh hover-analysis "$IMAGE_LABEL" 10
+
+  reconcile-worker-pool:
+    name: Reconcile hover-worker pool
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [build-shared, release-worker]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/fly-setup
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Reap stale-image machines and top up to 5 stopped clones
+        env:
+          IMAGE: ${{ needs.build-shared.outputs.image }}
+        run: |
+          IMAGE_LABEL="${IMAGE##*:}"
           bash scripts/fly-reconcile-pool.sh hover-worker "$IMAGE_LABEL" 5
 
   # ───────── Autoscaler release ────────────────────────────────────────
@@ -241,8 +266,8 @@ jobs:
   # since the two autoscaler apps are independent.
   release-autoscaler-worker:
     name: Release hover-autoscaler-worker
-    runs-on: ubuntu-24.04
-    needs: [release-worker]
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [reconcile-worker-pool]
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/fly-setup
@@ -288,8 +313,8 @@ jobs:
 
   release-autoscaler-analysis:
     name: Release hover-autoscaler-analysis
-    runs-on: ubuntu-24.04
-    needs: [release-analysis]
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [reconcile-analysis-pool]
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/fly-setup
@@ -340,7 +365,7 @@ jobs:
   # warning but do not fail the workflow.
   annotate:
     name: Post deploy annotation to Grafana
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs:
       [
         release-api,
