@@ -43,6 +43,18 @@ On merge, CI will:
   (`user_is_member_of`, `user_organisation_id`, `user_organisations`) remain
   callable.
 
+### Performance
+
+- Rewrote 14 RLS policies on `notifications`, `daily_usage`,
+  `google_analytics_connections`, `google_analytics_accounts`, and
+  `organisation_domains` to wrap `auth.uid()` in a `(select …)` so it is
+  evaluated once per query instead of once per row.
+- Scoped the `Service role can manage usage` policy on `daily_usage`
+  `TO service_role` so it no longer fires during anon/authenticated SELECTs,
+  removing the multiple-permissive-policies overhead.
+- Pinned `search_path` on `update_job_queue_counters` and
+  `get_daily_quota_remaining`.
+
 ## Full changelog history
 
 ## [0.34.7] – 2026-05-09
