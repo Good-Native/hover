@@ -166,7 +166,7 @@ func startHealthMonitoring(ctx context.Context, wg *sync.WaitGroup, pgDB *db.DB,
 	healthTicker := time.NewTicker(healthCheckInterval)
 	defer healthTicker.Stop()
 
-	checkJobCompletion := func() {
+	checkJobCompletion := func(runCtx context.Context) {
 		rows, err := pgDB.GetDB().Query(`
 			UPDATE jobs
 			SET status = 'completed', completed_at = NOW()
@@ -195,7 +195,7 @@ func startHealthMonitoring(ctx context.Context, wg *sync.WaitGroup, pgDB *db.DB,
 		// them). Partial cleanup is acceptable; reclaim sweeper retries.
 		if redisClient != nil {
 			for _, jobID := range completed {
-				if err := redisClient.RemoveJobKeys(ctx, jobID); err != nil {
+				if err := redisClient.RemoveJobKeys(runCtx, jobID); err != nil {
 					startupLog.Warn("failed to clean up Redis keys for completed job",
 						"error", err, "job_id", jobID)
 				}
@@ -203,7 +203,8 @@ func startHealthMonitoring(ctx context.Context, wg *sync.WaitGroup, pgDB *db.DB,
 		}
 	}
 
-	checkSystemHealth := func() {
+	checkSystemHealth := func(runCtx context.Context) {
+		_ = runCtx // future spans started inside this closure will get parented to the wrapping transaction
 		var totalStuckJobs int
 		err := pgDB.GetDB().QueryRow(`
 			SELECT COUNT(*)
@@ -331,13 +332,13 @@ func startHealthMonitoring(ctx context.Context, wg *sync.WaitGroup, pgDB *db.DB,
 		}
 	}
 
-	// Wrap each tick in a Sentry transaction so the existing
-	// `db.cleanup_stuck_jobs` span (and any future spans inside the
-	// completion path) get parented and bill as performance units.
-	tickInTransaction := func(name string, fn func()) {
+	// Wrap each tick in a Sentry transaction and pass the transaction-aware
+	// context to the closure so any spans started inside (existing or
+	// future) get parented and bill as performance units.
+	tickInTransaction := func(name string, fn func(context.Context)) {
 		txn := sentry.StartTransaction(ctx, name)
 		defer txn.Finish()
-		fn()
+		fn(txn.Context())
 	}
 
 	tickInTransaction("health.completion_check", checkJobCompletion)
