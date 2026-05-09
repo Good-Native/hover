@@ -39,7 +39,11 @@ if (!hasSupabaseRuntimeConfig()) {
 }
 
 // Global state
-let supabase;
+// var (not let) so this declaration doesn't collide with the supabase UMD's
+// own top-level `var supabase` when both load on extension-auth.html — top-level
+// `let` and `var` for the same name share the realm's global lexical record
+// and throw "Identifier 'supabase' has already been declared" at parse time.
+var supabase;
 let captchaToken = null;
 const MAX_TURNSTILE_RETRIES = 2;
 let pendingSignupSubmission = null;
