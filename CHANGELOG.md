@@ -28,7 +28,25 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Added
+
+- Sentry browser SDK + replay loader on the homepage, auth-callback, welcome,
+  invite-welcome, and extension-auth pages so existing
+  `window.Sentry.captureException` calls in `auth.js` stop silently no-op-ing on
+  the auth flow.
+- Sentry transactions wrapping the job scheduler tick, the health-monitor
+  completion and system checks, and inbound HTTP requests (via the `sentryhttp`
+  middleware), so existing `sentry.StartSpan` calls in
+  `internal/jobs/manager.go` and `internal/db/queue.go` get parented and bill as
+  performance units.
+- Sentry Logs forwarding for Warn+ slog records (`EnableLogs` plus a `LogLevel`
+  on the slog handler), separate from the existing error-event surface.
+
+### Changed
+
+- Extracted the duplicated frontend Sentry init block into
+  `web/static/js/sentry-init.js` so future tweaks land once instead of per HTML
+  page.
 
 ## Full changelog history
 
