@@ -388,6 +388,17 @@ function waitForAuthScript(pollIntervalMs = 50, timeoutMs = 12000) {
  */
 async function handleAuthCallback() {
   try {
+    // The extension-auth page sets window.supabase itself (via webflow-login.js)
+    // without ever calling initialiseSupabase, so the local supabaseClient is
+    // null on first invocation. Lazy-initialise here to handle that path.
+    if (!supabaseClient) {
+      initialiseSupabase();
+    }
+    if (!supabaseClient) {
+      console.error("handleAuthCallback: Supabase client not available");
+      return false;
+    }
+
     const isExtensionAuthFlow = Boolean(window.GNH_APP?.extensionAuth);
 
     // Check for error parameters in URL (from OAuth failures)
