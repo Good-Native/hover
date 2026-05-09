@@ -555,16 +555,30 @@ jobs:
         env:
           IMAGE: ${{ needs.build-analysis.outputs.image }}
           ANALYSIS_APP: ${{ needs.provision.outputs.analysis_app }}
-          IMAGE_LABEL: ${{ needs.provision.outputs.image_label }}
         run: |
           flyctl deploy \
             --image "$IMAGE" \
             --config .fly/review_apps.analysis.toml \
             --app "$ANALYSIS_APP" \
             --ha=false
-          # Reconcile pre-provisioned pool: reap stale-image machines and
-          # top up to 10 stopped clones for the per-PR autoscaler.
-          bash scripts/fly-reconcile-pool.sh "$ANALYSIS_APP" "$IMAGE_LABEL" 10
+
+  reconcile-analysis-pool:
+    name: Reconcile analysis review pool
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [provision, release-analysis]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/fly-setup
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          validate-redis-url: "false"
+
+      - name: Reap stale-image machines and top up to 3 stopped clones
+        env:
+          ANALYSIS_APP: ${{ needs.provision.outputs.analysis_app }}
+          IMAGE_LABEL: ${{ needs.provision.outputs.image_label }}
+        run: |
+          bash scripts/fly-reconcile-pool.sh "$ANALYSIS_APP" "$IMAGE_LABEL" 3
 
   release-worker:
     name: Release worker review app
@@ -586,16 +600,30 @@ jobs:
         env:
           IMAGE: ${{ needs.build-shared.outputs.image }}
           WORKER_APP: ${{ needs.provision.outputs.worker_app }}
-          IMAGE_LABEL: ${{ needs.provision.outputs.image_label }}
         run: |
           flyctl deploy \
             --image "$IMAGE" \
             --config .fly/review_apps.worker.toml \
             --app "$WORKER_APP" \
             --ha=false
-          # Reconcile pre-provisioned pool: reap stale-image machines and
-          # top up to 5 stopped clones for the per-PR autoscaler.
-          bash scripts/fly-reconcile-pool.sh "$WORKER_APP" "$IMAGE_LABEL" 5
+
+  reconcile-worker-pool:
+    name: Reconcile worker review pool
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [provision, release-worker]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/fly-setup
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          validate-redis-url: "false"
+
+      - name: Reap stale-image machines and top up to 3 stopped clones
+        env:
+          WORKER_APP: ${{ needs.provision.outputs.worker_app }}
+          IMAGE_LABEL: ${{ needs.provision.outputs.image_label }}
+        run: |
+          bash scripts/fly-reconcile-pool.sh "$WORKER_APP" "$IMAGE_LABEL" 3
 
   # ───────── Autoscaler release ────────────────────────────────────────
   # One fly-autoscaler app per target (worker / analysis), each scoped to
@@ -605,7 +633,7 @@ jobs:
   release-autoscaler-worker:
     name: Release worker autoscaler review app
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: [provision, release-worker]
+    needs: [provision, reconcile-worker-pool]
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/fly-setup
@@ -626,7 +654,7 @@ jobs:
   release-autoscaler-analysis:
     name: Release analysis autoscaler review app
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: [provision, release-analysis]
+    needs: [provision, reconcile-analysis-pool]
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/fly-setup
