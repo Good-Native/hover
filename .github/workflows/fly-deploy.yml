@@ -45,7 +45,7 @@ jobs:
   # Chromium) and is built independently.
   build-shared:
     name: Build hover image (API + worker)
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       image: ${{ steps.build.outputs.image }}
     steps:
@@ -66,7 +66,7 @@ jobs:
 
   build-analysis:
     name: Build hover-analysis image
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       image: ${{ steps.build.outputs.image }}
     steps:
@@ -92,7 +92,7 @@ jobs:
   # consumer is healthy before the producer starts publishing.
   release-api:
     name: Release hover (API)
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [build-shared]
     steps:
       - uses: actions/checkout@v6
@@ -135,7 +135,7 @@ jobs:
 
   release-analysis:
     name: Release hover-analysis
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [build-analysis]
     steps:
       - uses: actions/checkout@v6
@@ -185,7 +185,7 @@ jobs:
 
   release-worker:
     name: Release hover-worker
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Waits on build-shared for the image, and on release-analysis for
     # the consumer-before-producer invariant.
     needs: [build-shared, release-analysis]
@@ -241,7 +241,7 @@ jobs:
   # since the two autoscaler apps are independent.
   release-autoscaler-worker:
     name: Release hover-autoscaler-worker
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [release-worker]
     steps:
       - uses: actions/checkout@v6
@@ -288,7 +288,7 @@ jobs:
 
   release-autoscaler-analysis:
     name: Release hover-autoscaler-analysis
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [release-analysis]
     steps:
       - uses: actions/checkout@v6
@@ -340,7 +340,7 @@ jobs:
   # warning but do not fail the workflow.
   annotate:
     name: Post deploy annotation to Grafana
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs:
       [
         release-api,

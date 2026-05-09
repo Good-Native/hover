@@ -43,7 +43,7 @@ jobs:
   # needs a deploy to apply them.
   provision:
     name: Provision review-app dependencies
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     if: |
       github.event.pull_request.draft == false &&
       github.event.action != 'closed' &&
@@ -460,7 +460,7 @@ jobs:
   # so it is reused by both release-api and release-worker.
   build-shared:
     name: Build shared review image (API + worker)
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [provision]
     outputs:
       image: ${{ steps.build.outputs.image }}
@@ -488,7 +488,7 @@ jobs:
 
   build-analysis:
     name: Build analysis review image
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [provision]
     outputs:
       image: ${{ steps.build.outputs.image }}
@@ -517,7 +517,7 @@ jobs:
   # healthy before the producer starts XADDing onto the lighthouse stream.
   release-api:
     name: Release API review app
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [provision, build-shared]
     steps:
       - uses: actions/checkout@v6
@@ -542,7 +542,7 @@ jobs:
 
   release-analysis:
     name: Release analysis review app
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [provision, build-analysis]
     steps:
       - uses: actions/checkout@v6
@@ -568,7 +568,7 @@ jobs:
 
   release-worker:
     name: Release worker review app
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # build-shared for the image, release-analysis for the
     # consumer-before-producer invariant.
     needs: [provision, build-shared, release-analysis]
@@ -604,7 +604,7 @@ jobs:
   # has machines to start/stop on first poll.
   release-autoscaler-worker:
     name: Release worker autoscaler review app
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [provision, release-worker]
     steps:
       - uses: actions/checkout@v6
@@ -625,7 +625,7 @@ jobs:
 
   release-autoscaler-analysis:
     name: Release analysis autoscaler review app
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [provision, release-analysis]
     steps:
       - uses: actions/checkout@v6
@@ -649,7 +649,7 @@ jobs:
   # succeeds (worker/analysis are not user-facing).
   comment-pr:
     name: Comment review-app URL on PR
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [provision, release-api]
     permissions:
       pull-requests: write
@@ -679,7 +679,7 @@ jobs:
   # stop the analysis consumer before the API stops enqueueing).
   cleanup-review:
     name: Cleanup Review App
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     if: github.event.action == 'closed'
     steps:
       - uses: superfly/flyctl-actions/setup-flyctl@63da3ecc5e2793b98a3f2519b3d75d4f4c11cec2 # pinned
