@@ -3,29 +3,32 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" type="image/png" href="/assets/Good-Native_Hover_App_Logo_Webflow.png">
+    <link
+      rel="icon"
+      type="image/png"
+      href="/assets/Good-Native_Hover_App_Logo_Webflow.png"
+    />
     <title>Hover — Connect to Webflow</title>
 
-    <!--
-      Phase 1 loading pattern:
-      1. /config.js       — sets window.GNH_CONFIG (server-rendered)
-      2. /js/auth.js      — GNHAuth helpers; still loaded as legacy script
-                            while the auth modal component is pre-module
-      3. Supabase SDK     — CDN UMD, sets window.supabase
-      4. module entry     — /app/pages/webflow-login.js (ES module)
-
-      No gnh-bootstrap.js. No core.js. No GNH_APP.whenReady().
-      The extensionAuth flag is set inside webflow-login.js before any
-      auth action, preserving the auth redirect contract from AGENTS.md.
-    -->
-    <script src="/config.js"></script>
-    <script src="/js/auth.js" defer></script>
+    <!-- Sentry Error Monitoring & Performance — loaded first so it captures
+         errors from the auth flow scripts below. -->
     <script
-      src="https://unpkg.com/@supabase/supabase-js@2.95.3/dist/umd/supabase.js"
-      integrity="sha384-g8TQpKstPpyDTjwOLNQvGR++9KAGGvtxWv+P5XmDd3QZQx1jie8r1hx0gVpD+cdb"
+      src="https://browser.sentry-cdn.com/10.38.0/bundle.tracing.replay.min.js"
+      integrity="sha384-XDXFmBaNWlQ7XLfEYTin+MajORWXtav1ePcSXtuFHSM8q1JXxmiihPepvYcZBLqD"
       crossorigin="anonymous"
-      defer
     ></script>
+    <script src="/js/sentry-init.js"></script>
+
+    <!-- Signal to core.js that this is the extension auth popup. core.js
+         picks up GNH_APP.extensionAuth and routes to initExtensionAuthPage
+         in auth.js, which posts the session back to the Webflow extension
+         via window.opener.postMessage. Must be set BEFORE core.js runs. -->
+    <script>
+      window.GNH_APP = Object.assign({}, window.GNH_APP || {}, {
+        extensionAuth: true,
+      });
+    </script>
+    <script src="/js/core.js" defer></script>
 
     <link rel="stylesheet" href="/app/styles/tokens.css" />
     <link rel="stylesheet" href="/app/styles/base.css" />
@@ -75,20 +78,12 @@
         color: var(--text-colour--secondary);
         text-align: center;
         min-height: 1.4em;
-        transition: color var(--motion-duration--normal)
-          var(--motion-easing--standard);
+        transition:
+          color var(--motion-duration--normal) var(--motion-easing--standard);
       }
 
-      .extension-auth-status[data-variant="success"] {
-        color: var(--status-colour--success);
-      }
-
-      .extension-auth-status[data-variant="error"] {
+      .extension-auth-status.error {
         color: var(--status-colour--danger);
-      }
-
-      .extension-auth-status[data-variant="warning"] {
-        color: var(--status-colour--warning);
       }
 
       .extension-auth-reopen {
@@ -104,7 +99,8 @@
         cursor: pointer;
         text-align: center;
         transition:
-          border-color var(--motion-duration--fast) var(--motion-easing--standard),
+          border-color var(--motion-duration--fast)
+            var(--motion-easing--standard),
           color var(--motion-duration--fast) var(--motion-easing--standard);
       }
 
@@ -133,17 +129,11 @@
         Preparing sign-in…
       </div>
 
-      <button
-        class="extension-auth-reopen"
-        type="button"
-        id="reopenModalBtn"
-      >
+      <button class="extension-auth-reopen" type="button" id="reopenModalBtn">
         Reopen sign-in
       </button>
 
       <div id="authModalContainer"></div>
     </main>
-
-    <script type="module" src="/app/pages/webflow-login.js"></script>
   </body>
 </html>

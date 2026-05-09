@@ -38,8 +38,9 @@ if (!hasSupabaseRuntimeConfig()) {
   );
 }
 
-// Global state
-let supabase;
+// Renamed from `supabase` to avoid colliding with the supabase UMD's own
+// top-level `var supabase` on pages that load the SDK alongside this file.
+let supabaseClient = null;
 let captchaToken = null;
 const MAX_TURNSTILE_RETRIES = 2;
 let pendingSignupSubmission = null;
@@ -278,6 +279,7 @@ function getOAuthCallbackURL(params = {}) {
 function initialiseSupabase() {
   // If already initialised (client has auth property), return success
   if (window.supabase && window.supabase.auth) {
+    supabaseClient = window.supabase;
     return true;
   }
 
@@ -290,8 +292,11 @@ function initialiseSupabase() {
 
   // Otherwise, create the client from the SDK
   if (window.supabase && window.supabase.createClient) {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    window.supabase = supabase; // Ensure it's globally available
+    supabaseClient = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_ANON_KEY
+    );
+    window.supabase = supabaseClient; // Ensure it's globally available
     return true;
   }
   return false;
@@ -431,7 +436,7 @@ async function handleAuthCallback() {
       const {
         data: { session },
         error,
-      } = await supabase.auth.setSession({
+      } = await supabaseClient.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
       });
@@ -476,7 +481,7 @@ async function handleAuthCallback() {
       // Check if already authenticated
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await supabaseClient.auth.getSession();
       if (session) {
         const pendingInviteToken = getPendingInviteToken();
         if (
@@ -534,7 +539,7 @@ async function registerUserWithBackend(user) {
   }
 
   try {
-    const session = await supabase.auth.getSession();
+    const session = await supabaseClient.auth.getSession();
     if (!session.data.session) {
       console.error("No session available for registration");
       return false;
@@ -682,7 +687,7 @@ function updateAuthState(isAuthenticated) {
       ) {
         logoutBtn.addEventListener("click", async () => {
           try {
-            const { error } = await supabase.auth.signOut();
+            const { error } = await supabaseClient.auth.signOut();
             if (error) {
               console.error("Logout error:", error);
               alert("Logout failed. Please try again.");
@@ -716,7 +721,7 @@ async function updateUserInfo() {
     // Get current user from Supabase directly
     const {
       data: { session },
-    } = await supabase.auth.getSession();
+    } = await supabaseClient.auth.getSession();
 
     if (session && session.user && session.user.email) {
       const email = session.user.email;
@@ -1072,7 +1077,7 @@ async function handleEmailLogin(event) {
   clearAuthError();
 
   try {
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
       email,
       password,
     });
@@ -1165,7 +1170,7 @@ async function executeEmailSignup() {
       name: fullName || "",
     };
 
-    const { data, error } = await supabase.auth.signUp({
+    const { data, error } = await supabaseClient.auth.signUp({
       email,
       password,
       options: signupOptions,
@@ -1274,13 +1279,13 @@ async function trySendCliCallback(callbackUrlOverride) {
   }
 
   try {
-    if (!supabase) {
+    if (!supabaseClient) {
       return false;
     }
     const {
       data: { session },
       error,
-    } = await supabase.auth.getSession();
+    } = await supabaseClient.auth.getSession();
     if (error || !session) {
       return false;
     }
@@ -1374,7 +1379,7 @@ async function handlePasswordReset(event) {
   clearAuthError();
 
   try {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/dashboard`,
     });
 
@@ -1419,7 +1424,7 @@ async function handleSocialLogin(provider, options = {}) {
       window.GNH_APP?.oauthRedirectOverride ||
       (window.GNH_APP?.extensionAuth ? window.location.href : "");
 
-    const { data, error } = await supabase.auth.signInWithOAuth({
+    const { data, error } = await supabaseClient.auth.signInWithOAuth({
       provider,
       options: {
         redirectTo: redirectOverride || getOAuthRedirectTarget(),
@@ -1486,7 +1491,7 @@ async function initAuthCallbackPage() {
 
   const {
     data: { session },
-  } = await supabase.auth.getSession();
+  } = await supabaseClient.auth.getSession();
   if (session) {
     authCallbackRedirectIssued = true;
     window.location.replace("/dashboard");
@@ -1815,12 +1820,12 @@ function setupAuthHandlers() {
 
       // Ensure Supabase client is initialized before calling getSession.
       await waitForAuthScript();
-      if (!supabase || !supabase.auth) {
+      if (!supabaseClient || !supabaseClient.auth) {
         console.error("CLI auth: Supabase client not initialized");
         return;
       }
 
-      const { data } = await supabase.auth.getSession();
+      const { data } = await supabaseClient.auth.getSession();
       if (!data?.session) {
         await loadAuthModal();
         showAuthModal();
@@ -1835,12 +1840,12 @@ function initialiseAuthStateSync() {
   if (authStateSyncInitialised) {
     return true;
   }
-  if (!supabase?.auth && !initialiseSupabase()) {
+  if (!supabaseClient?.auth && !initialiseSupabase()) {
     return false;
   }
   authStateSyncInitialised = true;
 
-  supabase.auth
+  supabaseClient.auth
     .getSession()
     .then(({ data }) => {
       const session = data?.session;
@@ -1856,7 +1861,7 @@ function initialiseAuthStateSync() {
       updateAuthState(false);
     });
 
-  supabase.auth.onAuthStateChange((_event, session) => {
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
     const isAuthenticated = Boolean(session);
     updateAuthState(isAuthenticated);
     if (isAuthenticated) {
@@ -1889,7 +1894,7 @@ function scheduleAuthStateSyncRetry() {
  */
 async function handleLogout() {
   try {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabaseClient.auth.signOut();
     if (error) {
       console.error("Logout error:", error);
       alert("Logout failed. Please try again.");
@@ -2011,19 +2016,35 @@ function initExtensionAuthPage() {
     return;
   }
 
-  // Best-effort validation of the opener origin. Browsers can omit referrer
-  // headers in popup flows, so we no longer fail closed on missing referrer.
-  try {
-    const referrerOrigin = document.referrer
-      ? new URL(document.referrer).origin
-      : "";
-    if (referrerOrigin && referrerOrigin !== targetOrigin) {
-      setStatus("Origin mismatch. Please relaunch from the extension.", true);
+  // Best-effort validation of the opener origin on initial popup load.
+  // Skip when we're returning from an OAuth provider — the referrer in that
+  // case is the provider (e.g. accounts.google.com), not the original opener.
+  // targetOrigin has already been allowlisted above, so the OAuth-return path
+  // still relies on that plus the live window.opener reference.
+  const oauthReturnParams = new URLSearchParams(window.location.search);
+  const oauthReturnHash = new URLSearchParams(
+    window.location.hash.replace(/^#/, "")
+  );
+  const isOAuthReturn =
+    oauthReturnParams.has("code") ||
+    oauthReturnParams.has("error") ||
+    oauthReturnParams.has("error_code") ||
+    oauthReturnHash.has("access_token") ||
+    oauthReturnHash.has("refresh_token");
+
+  if (!isOAuthReturn) {
+    try {
+      const referrerOrigin = document.referrer
+        ? new URL(document.referrer).origin
+        : "";
+      if (referrerOrigin && referrerOrigin !== targetOrigin) {
+        setStatus("Origin mismatch. Please relaunch from the extension.", true);
+        return;
+      }
+    } catch (_error) {
+      setStatus("Unable to validate opener origin. Please relaunch.", true);
       return;
     }
-  } catch (_error) {
-    setStatus("Unable to validate opener origin. Please relaunch.", true);
-    return;
   }
 
   if (!initialiseSupabase()) {
@@ -2059,7 +2080,7 @@ function initExtensionAuthPage() {
     const {
       data: { session },
       error,
-    } = await supabase.auth.getSession();
+    } = await supabaseClient.auth.getSession();
 
     if (error || !session?.access_token || !session.user) {
       throw new Error(error?.message || "No active session found", {
@@ -2122,7 +2143,7 @@ function initExtensionAuthPage() {
 
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await supabaseClient.auth.getSession();
       if (session?.access_token) {
         setStatus("Existing session found. Connecting extension…");
         await sendSessionToExtension();

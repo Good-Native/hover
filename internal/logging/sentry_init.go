@@ -49,6 +49,10 @@ func InitSentry(opts SentryOptions) (func(), error) {
 		AttachStacktrace: true,
 		Debug:            opts.Debug,
 		BeforeSend:       wrapBeforeSend(appName, region, opts.Process),
+		// Forward Warn+ slog records into the Sentry Logs surface (separate
+		// from error events). Volume at Warn+ is well under the 5 TB Team
+		// quota, so no overage risk.
+		EnableLogs: true,
 	}
 	if opts.TracesSampleRate > 0 {
 		clientOpts.TracesSampleRate = opts.TracesSampleRate

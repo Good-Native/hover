@@ -210,7 +210,12 @@ func Setup(level slog.Level, env string) {
 
 	sentryHandler := sentryslog.Option{
 		EventLevel: []slog.Level{slog.LevelError},
-		Converter:  componentConverter,
+		// LogLevel forwards entries to the Sentry Logs surface (separate
+		// from error events). Warn+ keeps volume well under the included
+		// quota and avoids duplicating Info-level chatter that already
+		// lives in stdout/Fly logs.
+		LogLevel:  []slog.Level{slog.LevelWarn, slog.LevelError},
+		Converter: componentConverter,
 		AttrFromContext: []func(ctx context.Context) []slog.Attr{
 			noCaptureAttr,
 		},

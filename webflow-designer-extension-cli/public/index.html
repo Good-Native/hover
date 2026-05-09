@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link href="./styles.css" rel="stylesheet" />
     <title>Hover for Webflow</title>
+    <!-- Sentry Error Monitoring & Performance. Bundle + init script mirror
+         web/static/js/sentry-init.js (synced into ./sentry-init.js by
+         scripts/sync-shared.js). If Webflow's iframe CSP blocks the CDN,
+         the init script no-ops because it guards on window.Sentry. -->
+    <script
+      src="https://browser.sentry-cdn.com/10.38.0/bundle.tracing.replay.min.js"
+      integrity="sha384-XDXFmBaNWlQ7XLfEYTin+MajORWXtav1ePcSXtuFHSM8q1JXxmiihPepvYcZBLqD"
+      crossorigin="anonymous"
+    ></script>
+    <script src="./sentry-init.js"></script>
     <!-- Import map: remap /app/ paths used by shared modules to local copies -->
     <script type="importmap">
       {

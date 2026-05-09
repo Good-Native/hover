@@ -16,6 +16,8 @@ import (
 
 	"runtime/trace"
 
+	"github.com/getsentry/sentry-go"
+	sentryhttp "github.com/getsentry/sentry-go/http"
 	"github.com/good-native/hover/internal/api"
 	"github.com/good-native/hover/internal/broker"
 	"github.com/good-native/hover/internal/crawler"
@@ -52,92 +54,104 @@ func startJobScheduler(ctx context.Context, wg *sync.WaitGroup, jobsManager *job
 			startupLog.Info("Job scheduler stopped")
 			return
 		case <-ticker.C:
-			schedulers, err := pgDB.GetSchedulersReadyToRun(ctx, schedulerBatchSize)
-			if err != nil {
-				// Warn not Error: 30s retry loop would flood Sentry on transient Postgres outage.
-				startupLog.Warn("Failed to get schedulers ready to run", "error", err)
-				continue
-			}
+			runSchedulerTick(ctx, jobsManager, pgDB)
+		}
+	}
+}
 
-			domainIDs := make([]int, 0, len(schedulers))
-			for _, scheduler := range schedulers {
-				domainIDs = append(domainIDs, scheduler.DomainID)
-			}
+// runSchedulerTick executes one scheduler pass under a Sentry transaction so
+// the existing `manager.create_job` spans get parented and bill as performance
+// units. Tick frequency is bounded (every 30s), well within the perf-units
+// quota.
+func runSchedulerTick(ctx context.Context, jobsManager *jobs.JobManager, pgDB *db.DB) {
+	txn := sentry.StartTransaction(ctx, "scheduler.tick")
+	defer txn.Finish()
+	tickCtx := txn.Context()
 
-			domainNames, err := pgDB.GetDomainNames(ctx, domainIDs)
-			if err != nil {
-				startupLog.Warn("Failed to get domain names for schedulers", "error", err)
-				continue
-			}
+	schedulers, err := pgDB.GetSchedulersReadyToRun(tickCtx, schedulerBatchSize)
+	if err != nil {
+		// Warn not Error: 30s retry loop would flood Sentry on transient Postgres outage.
+		startupLog.Warn("Failed to get schedulers ready to run", "error", err)
+		return
+	}
 
-			for _, scheduler := range schedulers {
-				domainName, ok := domainNames[scheduler.DomainID]
-				if !ok {
-					startupLog.Warn("Domain name not found", "domain_id", scheduler.DomainID, "scheduler_id", scheduler.ID)
-					continue
-				}
+	domainIDs := make([]int, 0, len(schedulers))
+	for _, scheduler := range schedulers {
+		domainIDs = append(domainIDs, scheduler.DomainID)
+	}
 
-				lastJobStart, err := pgDB.GetLastJobStartTimeForScheduler(ctx, scheduler.ID)
-				if err != nil {
-					startupLog.Warn("Failed to get last job start time", "error", err, "scheduler_id", scheduler.ID)
-					continue
-				}
+	domainNames, err := pgDB.GetDomainNames(tickCtx, domainIDs)
+	if err != nil {
+		startupLog.Warn("Failed to get domain names for schedulers", "error", err)
+		return
+	}
 
-				if lastJobStart != nil {
-					minInterval := time.Duration(scheduler.ScheduleIntervalHours) * time.Hour / 2
-					timeSinceLastJob := time.Since(*lastJobStart)
+	for _, scheduler := range schedulers {
+		domainName, ok := domainNames[scheduler.DomainID]
+		if !ok {
+			startupLog.Warn("Domain name not found", "domain_id", scheduler.DomainID, "scheduler_id", scheduler.ID)
+			continue
+		}
 
-					if timeSinceLastJob < minInterval {
-						startupLog.Info("Skipping scheduled job - last job started too recently",
-							"scheduler_id", scheduler.ID,
-							"domain", domainName,
-							"time_since_last_job", timeSinceLastJob,
-							"minimum_interval", minInterval,
-						)
+		lastJobStart, err := pgDB.GetLastJobStartTimeForScheduler(tickCtx, scheduler.ID)
+		if err != nil {
+			startupLog.Warn("Failed to get last job start time", "error", err, "scheduler_id", scheduler.ID)
+			continue
+		}
 
-						nextRun := time.Now().UTC().Add(time.Duration(scheduler.ScheduleIntervalHours) * time.Hour)
-						if err := pgDB.UpdateSchedulerNextRun(ctx, scheduler.ID, nextRun); err != nil {
-							startupLog.Warn("Failed to update scheduler next run", "error", err, "scheduler_id", scheduler.ID)
-						}
-						continue
-					}
-				}
+		if lastJobStart != nil {
+			minInterval := time.Duration(scheduler.ScheduleIntervalHours) * time.Hour / 2
+			timeSinceLastJob := time.Since(*lastJobStart)
 
-				sourceType := "scheduler"
-				opts := &jobs.JobOptions{
-					Domain:                   domainName,
-					OrganisationID:           &scheduler.OrganisationID,
-					UseSitemap:               true,
-					Concurrency:              scheduler.Concurrency,
-					FindLinks:                scheduler.FindLinks,
-					AllowCrossSubdomainLinks: true,
-					MaxPages:                 scheduler.MaxPages,
-					IncludePaths:             scheduler.IncludePaths,
-					ExcludePaths:             scheduler.ExcludePaths,
-					RequiredWorkers:          scheduler.RequiredWorkers,
-					SourceType:               &sourceType,
-					SourceDetail:             &scheduler.ID,
-					SchedulerID:              &scheduler.ID,
-				}
-
-				job, err := jobsManager.CreateJob(ctx, opts)
-				if err != nil {
-					startupLog.Warn("Failed to create scheduled job", "error", err, "scheduler_id", scheduler.ID)
-					continue
-				}
+			if timeSinceLastJob < minInterval {
+				startupLog.Info("Skipping scheduled job - last job started too recently",
+					"scheduler_id", scheduler.ID,
+					"domain", domainName,
+					"time_since_last_job", timeSinceLastJob,
+					"minimum_interval", minInterval,
+				)
 
 				nextRun := time.Now().UTC().Add(time.Duration(scheduler.ScheduleIntervalHours) * time.Hour)
-				if err := pgDB.UpdateSchedulerNextRun(ctx, scheduler.ID, nextRun); err != nil {
+				if err := pgDB.UpdateSchedulerNextRun(tickCtx, scheduler.ID, nextRun); err != nil {
 					startupLog.Warn("Failed to update scheduler next run", "error", err, "scheduler_id", scheduler.ID)
-				} else {
-					startupLog.Info("Created scheduled job",
-						"scheduler_id", scheduler.ID,
-						"job_id", job.ID,
-						"domain", domainName,
-						"next_run_at", nextRun,
-					)
 				}
+				continue
 			}
+		}
+
+		sourceType := "scheduler"
+		opts := &jobs.JobOptions{
+			Domain:                   domainName,
+			OrganisationID:           &scheduler.OrganisationID,
+			UseSitemap:               true,
+			Concurrency:              scheduler.Concurrency,
+			FindLinks:                scheduler.FindLinks,
+			AllowCrossSubdomainLinks: true,
+			MaxPages:                 scheduler.MaxPages,
+			IncludePaths:             scheduler.IncludePaths,
+			ExcludePaths:             scheduler.ExcludePaths,
+			RequiredWorkers:          scheduler.RequiredWorkers,
+			SourceType:               &sourceType,
+			SourceDetail:             &scheduler.ID,
+			SchedulerID:              &scheduler.ID,
+		}
+
+		job, err := jobsManager.CreateJob(tickCtx, opts)
+		if err != nil {
+			startupLog.Warn("Failed to create scheduled job", "error", err, "scheduler_id", scheduler.ID)
+			continue
+		}
+
+		nextRun := time.Now().UTC().Add(time.Duration(scheduler.ScheduleIntervalHours) * time.Hour)
+		if err := pgDB.UpdateSchedulerNextRun(tickCtx, scheduler.ID, nextRun); err != nil {
+			startupLog.Warn("Failed to update scheduler next run", "error", err, "scheduler_id", scheduler.ID)
+		} else {
+			startupLog.Info("Created scheduled job",
+				"scheduler_id", scheduler.ID,
+				"job_id", job.ID,
+				"domain", domainName,
+				"next_run_at", nextRun,
+			)
 		}
 	}
 }
@@ -152,7 +166,7 @@ func startHealthMonitoring(ctx context.Context, wg *sync.WaitGroup, pgDB *db.DB,
 	healthTicker := time.NewTicker(healthCheckInterval)
 	defer healthTicker.Stop()
 
-	checkJobCompletion := func() {
+	checkJobCompletion := func(runCtx context.Context) {
 		rows, err := pgDB.GetDB().Query(`
 			UPDATE jobs
 			SET status = 'completed', completed_at = NOW()
@@ -181,7 +195,7 @@ func startHealthMonitoring(ctx context.Context, wg *sync.WaitGroup, pgDB *db.DB,
 		// them). Partial cleanup is acceptable; reclaim sweeper retries.
 		if redisClient != nil {
 			for _, jobID := range completed {
-				if err := redisClient.RemoveJobKeys(ctx, jobID); err != nil {
+				if err := redisClient.RemoveJobKeys(runCtx, jobID); err != nil {
 					startupLog.Warn("failed to clean up Redis keys for completed job",
 						"error", err, "job_id", jobID)
 				}
@@ -189,7 +203,8 @@ func startHealthMonitoring(ctx context.Context, wg *sync.WaitGroup, pgDB *db.DB,
 		}
 	}
 
-	checkSystemHealth := func() {
+	checkSystemHealth := func(runCtx context.Context) {
+		_ = runCtx // future spans started inside this closure will get parented to the wrapping transaction
 		var totalStuckJobs int
 		err := pgDB.GetDB().QueryRow(`
 			SELECT COUNT(*)
@@ -317,7 +332,16 @@ func startHealthMonitoring(ctx context.Context, wg *sync.WaitGroup, pgDB *db.DB,
 		}
 	}
 
-	checkJobCompletion()
+	// Wrap each tick in a Sentry transaction and pass the transaction-aware
+	// context to the closure so any spans started inside (existing or
+	// future) get parented and bill as performance units.
+	tickInTransaction := func(name string, fn func(context.Context)) {
+		txn := sentry.StartTransaction(ctx, name)
+		defer txn.Finish()
+		fn(txn.Context())
+	}
+
+	tickInTransaction("health.completion_check", checkJobCompletion)
 
 	startupLog.Info("Health monitoring started")
 
@@ -327,9 +351,9 @@ func startHealthMonitoring(ctx context.Context, wg *sync.WaitGroup, pgDB *db.DB,
 			startupLog.Info("Health monitoring stopped")
 			return
 		case <-completionTicker.C:
-			checkJobCompletion()
+			tickInTransaction("health.completion_check", checkJobCompletion)
 		case <-healthTicker.C:
-			checkSystemHealth()
+			tickInTransaction("health.system_check", checkSystemHealth)
 		}
 	}
 }
@@ -653,6 +677,10 @@ func main() {
 	handler = api.SecurityHeadersMiddleware(handler)
 	handler = api.CrossOriginProtectionMiddleware(handler)
 	handler = api.CORSMiddleware(handler)
+	// Sentry HTTP wrapper opens a transaction per request so the existing
+	// manager.* spans in jobs/manager.go become children and bill as
+	// performance units. TracesSampleRate from logging.InitSentry caps volume.
+	handler = sentryhttp.New(sentryhttp.Options{Repanic: true}).Handle(handler)
 	handler = observability.WrapHandler(handler, obsProviders)
 
 	server := &http.Server{
