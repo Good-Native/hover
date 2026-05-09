@@ -38,11 +38,8 @@ if (!hasSupabaseRuntimeConfig()) {
   );
 }
 
-// Global state
-// Renamed from `supabaseClient` to avoid colliding with the supabaseClient UMD's own
-// top-level `var supabaseClient` on pages that load the SDK directly (notably
-// web/templates/extension-auth.html). Previously fixed in commit fce9849a
-// and re-applied here after the rename was lost in a merge.
+// Renamed from `supabase` to avoid colliding with the supabase UMD's own
+// top-level `var supabase` on pages that load the SDK alongside this file.
 let supabaseClient = null;
 let captchaToken = null;
 const MAX_TURNSTILE_RETRIES = 2;
@@ -388,17 +385,6 @@ function waitForAuthScript(pollIntervalMs = 50, timeoutMs = 12000) {
  */
 async function handleAuthCallback() {
   try {
-    // The extension-auth page sets window.supabase itself (via webflow-login.js)
-    // without ever calling initialiseSupabase, so the local supabaseClient is
-    // null on first invocation. Lazy-initialise here to handle that path.
-    if (!supabaseClient) {
-      initialiseSupabase();
-    }
-    if (!supabaseClient) {
-      console.error("handleAuthCallback: Supabase client not available");
-      return false;
-    }
-
     const isExtensionAuthFlow = Boolean(window.GNH_APP?.extensionAuth);
 
     // Check for error parameters in URL (from OAuth failures)
