@@ -35,6 +35,7 @@ import { createDataTable } from "/app/components/hover-data-table.js";
 import { createTabs } from "/app/components/hover-tabs.js";
 import { showToast } from "/app/components/hover-toast.js";
 import { formatRelativeTime, formatDuration } from "/app/lib/formatters.js";
+import { initSurfacePage } from "/app/lib/surface-context.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -98,6 +99,11 @@ let throttleTimer = null;
 async function init() {
   jobId = resolveJobId();
   if (!jobId) return;
+
+  initSurfacePage({
+    title: "Job details",
+    defaultReturnPath: "/dashboard",
+  });
 
   // Wait for a valid session before touching the API
   const token = await waitForSession();

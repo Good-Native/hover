@@ -25,8 +25,20 @@ const COMPONENTS = [
   "components/hover-tabs.js",
 ];
 
-// Lib modules — shared logic loaded via bridge.js
-const LIB_MODULES = [
+// Lib modules required by bridge.js or other shared extension runtime paths.
+const REQUIRED_LIB_MODULES = [
+  "lib/site-jobs.js",
+  "lib/site-view.js",
+  "lib/shell-nav.js",
+  "lib/settings/account.js",
+  "lib/job-export.js",
+  "lib/webflow-sites.js",
+  "lib/organisation-api.js",
+  "lib/scheduler-api.js",
+];
+
+// Lib modules — shared logic loaded via bridge.js or available for future reuse.
+const OPTIONAL_LIB_MODULES = [
   "lib/api-client.js",
   "lib/auth-session.js",
   "lib/formatters.js",
@@ -34,6 +46,8 @@ const LIB_MODULES = [
   "lib/domain-search.js",
   "lib/invite-flow.js",
 ];
+
+const REQUIRED_STYLE_FILES = ["styles/shell.css"];
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) {
@@ -62,14 +76,37 @@ for (const file of COMPONENTS) {
   }
 }
 
-// Sync lib modules to public/lib/
-for (const file of LIB_MODULES) {
+// Sync required lib modules to public/lib/
+for (const file of REQUIRED_LIB_MODULES) {
   const src = path.join(APP_ROOT, file);
   const dest = path.join(PUBLIC, file);
   if (fs.existsSync(src)) {
     syncFile(src, dest);
   } else {
-    console.warn(`  WARN: ${file} not found, skipping`);
+    console.error(`  ERROR: required shared module missing: ${file}`);
+    process.exit(1);
+  }
+}
+
+// Sync optional lib modules to public/lib/
+for (const file of OPTIONAL_LIB_MODULES) {
+  const src = path.join(APP_ROOT, file);
+  const dest = path.join(PUBLIC, file);
+  if (fs.existsSync(src)) {
+    syncFile(src, dest);
+  } else {
+    console.warn(`  WARN: optional shared module missing: ${file}, skipping`);
+  }
+}
+
+for (const file of REQUIRED_STYLE_FILES) {
+  const src = path.join(APP_ROOT, file);
+  const dest = path.join(PUBLIC, file);
+  if (fs.existsSync(src)) {
+    syncFile(src, dest);
+  } else {
+    console.error(`  ERROR: required shared style missing: ${file}`);
+    process.exit(1);
   }
 }
 

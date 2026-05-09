@@ -9,10 +9,13 @@
       href="/assets/Good-Native_Hover_App_Logo_Webflow.png"
     />
     <title>Dashboard - Hover</title>
+
     <link rel="stylesheet" href="/styles/app.css" />
     <link rel="stylesheet" href="/app/styles/tokens.css" />
     <link rel="stylesheet" href="/app/styles/base.css" />
     <link rel="stylesheet" href="/app/styles/components.css" />
+    <link rel="stylesheet" href="/app/styles/shell.css" />
+    <link rel="stylesheet" href="/app/styles/dashboard-extension.css" />
 
     <!-- Sentry Error Monitoring & Performance -->
     <script
@@ -20,31 +23,31 @@
       crossorigin="anonymous"
     ></script>
     <script>
+      (function () {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("surface") === "webflow-extension") {
+          document.documentElement.setAttribute(
+            "data-surface-context",
+            "webflow-extension"
+          );
+        }
+      })();
+
       Sentry.init({
         dsn: "https://04f57d1dedc67f307cef525b1b1551a6@o4509113950928896.ingest.us.sentry.io/4509113952370688",
         environment:
           window.location.hostname === "hover.app.goodnative.co"
             ? "production"
             : "development",
-
-        // Performance Monitoring
-        tracesSampleRate: 0.1, // 10% of transactions
-
-        // Session Replay - records user sessions when errors occur
-        replaysSessionSampleRate: 0, // Don't record all sessions
-        replaysOnErrorSampleRate: 1.0, // Record 100% of sessions with errors
-
-        // User context
+        tracesSampleRate: 0.1,
+        replaysSessionSampleRate: 0,
+        replaysOnErrorSampleRate: 1.0,
         beforeSend(event) {
           return event;
         },
-
-        // Ignore certain errors
         ignoreErrors: [
-          // Browser extensions
           "ResizeObserver loop limit exceeded",
           "Non-Error promise rejection captured",
-          // Network errors that are expected
           /Failed to fetch/,
           /NetworkError/,
           /Load failed/,
@@ -52,8 +55,13 @@
       });
     </script>
 
-    <script src="/js/core.js" defer></script>
-    <script type="module" src="/app/lib/global-nav.js"></script>
+    <script src="/config.js"></script>
+    <script
+      src="https://unpkg.com/@supabase/supabase-js@2.95.3/dist/umd/supabase.js"
+      integrity="sha384-g8TQpKstPpyDTjwOLNQvGR++9KAGGvtxWv+P5XmDd3QZQx1jie8r1hx0gVpD+cdb"
+      crossorigin="anonymous"
+      defer
+    ></script>
 
     <!-- Google tag (gtag.js) -->
     <script
@@ -66,577 +74,365 @@
         dataLayer.push(arguments);
       }
       gtag("js", new Date());
-
       gtag("config", "G-D990P29YMF");
     </script>
   </head>
 
-  <body class="page-dashboard gnh-auth-route-gated">
-    <div id="globalNav"></div>
-    <!-- Main Content -->
-    <main class="main-content">
-      <!-- Job Creation Form -->
-      <div
-        style="
-          background: white;
-          border-radius: 12px;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-          margin-bottom: 24px;
-          padding: 24px;
-        "
-      >
-        <h2
-          style="
-            margin: 0 0 16px 0;
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: #374151;
-          "
+  <body class="page-dashboard">
+    <div id="surfaceContextBar" class="surface-context-bar" hidden>
+      <div class="surface-context-meta">
+        <a
+          id="surfaceContextBack"
+          class="surface-context-back"
+          href="/dashboard"
         >
-          Start Cache Warming
-        </h2>
-
-        <form
-          id="dashboardJobForm"
-          style="
-            display: grid;
-            grid-template-columns: 1fr 120px 140px 140px auto;
-            gap: 16px;
-            align-items: end;
-          "
-        >
-          <div>
-            <label
-              style="
-                display: block;
-                margin-bottom: 6px;
-                font-weight: 500;
-                color: #374151;
-                font-size: 14px;
-              "
-              >Domain</label
-            >
-            <input
-              type="text"
-              id="dashboardDomain"
-              name="domain"
-              required
-              placeholder="example.com"
-              aria-label="Domain to crawl"
-              style="
-                width: 100%;
-                padding: 12px 16px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 14px;
-                background: white;
-                color: #374151;
-                box-sizing: border-box;
-              "
-            />
-          </div>
-
-          <div>
-            <label
-              style="
-                display: block;
-                margin-bottom: 6px;
-                font-weight: 500;
-                color: #374151;
-                font-size: 14px;
-              "
-              >Max Pages</label
-            >
-            <input
-              type="number"
-              id="dashboardMaxPages"
-              name="max_pages"
-              min="0"
-              max="10000"
-              value="0"
-              aria-label="Maximum number of pages to crawl"
-              style="
-                width: 100%;
-                padding: 12px 16px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 14px;
-                background: white;
-                color: #374151;
-                box-sizing: border-box;
-              "
-            />
-          </div>
-
-          <div>
-            <label
-              style="
-                display: block;
-                margin-bottom: 6px;
-                font-weight: 500;
-                color: #374151;
-                font-size: 14px;
-              "
-              >Concurrency</label
-            >
-            <select
-              class="filter-select"
-              id="dashboardConcurrency"
-              name="concurrency"
-              aria-label="Concurrency level for crawling"
-              style="
-                width: 100%;
-                padding: 12px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 14px;
-                background: white;
-              "
-            >
-              <option value="default" selected>Default</option>
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
-              <option value="10">10</option>
-              <option value="15">15</option>
-              <option value="20">20</option>
-              <option value="25">25</option>
-              <option value="30">30</option>
-              <option value="40">40</option>
-              <option value="50">50</option>
-              <option value="75">75</option>
-              <option value="100">100</option>
-            </select>
-          </div>
-
-          <div>
-            <label
-              style="
-                display: block;
-                margin-bottom: 6px;
-                font-weight: 500;
-                color: #374151;
-                font-size: 14px;
-              "
-              >Schedule</label
-            >
-            <select
-              class="filter-select"
-              id="dashboardScheduleInterval"
-              name="schedule_interval_hours"
-              aria-label="Schedule frequency for recurring jobs"
-              style="
-                width: 100%;
-                padding: 12px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 14px;
-                background: white;
-              "
-            >
-              <option value="">Run once</option>
-              <option value="6">Every 6 hours</option>
-              <option value="12">Every 12 hours</option>
-              <option value="24">Every 24 hours</option>
-              <option value="48">Every 48 hours</option>
-            </select>
-          </div>
-
-          <button
-            type="submit"
-            class="gnh-button gnh-button-primary"
-            style="padding: 12px 24px; white-space: nowrap"
-            aria-label="Start cache warming crawl"
-          >
-            Start Crawl
-          </button>
-        </form>
-      </div>
-
-      <!-- Dashboard Controls -->
-      <div class="dashboard-actions">
-        <div class="dashboard-filters">
-          <div class="filter-group">
-            <label class="filter-label">Date Range</label>
-            <select
-              class="filter-select"
-              id="dateRange"
-              aria-label="Filter jobs by date range"
-            >
-              <option value="last_hour">Last Hour</option>
-              <option value="today" selected>Today</option>
-              <option value="last_24_hours">Last 24 Hours</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="last7">Last 7 Days</option>
-              <option value="last30">Last 30 Days</option>
-              <option value="last90">Last 90 Days</option>
-              <option value="all">All Time</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="page-actions">
-          <button
-            class="gnh-btn gnh-btn-secondary"
-            gnh-action="refresh-dashboard"
-            aria-label="Refresh dashboard data"
-          >
-            <span>↻</span> Refresh
-          </button>
+          Back to extension
+        </a>
+        <div>
+          <p id="surfaceContextTitle" class="surface-context-title">
+            Dashboard
+          </p>
+          <p id="surfaceContextSubtitle" class="surface-context-subtitle"></p>
         </div>
       </div>
-
-      <!-- Login Interface for Unauthenticated Users -->
-      <div id="loginContent" gnh-auth="guest">
-        <div
-          style="
-            max-width: 400px;
-            margin: 80px auto;
-            padding: 40px;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-          "
-        >
-          <div style="text-align: center; margin-bottom: 32px">
-            <div style="font-size: 48px; margin-bottom: 16px">🐝</div>
-            <h1
-              style="
-                font-size: 1.875rem;
-                font-weight: 700;
-                margin-bottom: 8px;
-                color: #1a1a1a;
-              "
-            >
-              Hover
-            </h1>
-            <p style="color: #6b7280; font-size: 14px">
-              Cache warming service dashboard
-            </p>
-          </div>
-
-          <div style="display: flex; gap: 12px; margin-bottom: 24px">
-            <button
-              id="showLoginBtn"
-              class="gnh-button gnh-button-primary"
-              style="flex: 1"
-              aria-label="Show sign in form"
-            >
-              Sign In
-            </button>
-            <button
-              id="showSignupBtn"
-              class="gnh-button gnh-button-outline"
-              style="flex: 1"
-              aria-label="Show create account form"
-            >
-              Create Account
-            </button>
-          </div>
-
-          <div style="text-align: center; color: #6b7280; font-size: 14px">
-            Sign in to access your dashboard
-          </div>
-        </div>
-      </div>
-
-      <!-- Dashboard Content for Authenticated Users -->
-      <div id="dashboardContent" gnh-auth="required" style="display: none">
-        <!-- Stats Overview Cards -->
-        <div class="gnh-stats-grid">
-          <div class="gnh-stat-card">
-            <div class="gnh-stat-value" gnh-text="stats.total_jobs">-</div>
-            <div class="gnh-stat-label">Total Jobs</div>
-          </div>
-          <div class="gnh-stat-card">
-            <div class="gnh-stat-value" gnh-text="stats.running_jobs">-</div>
-            <div class="gnh-stat-label">Running</div>
-          </div>
-          <div class="gnh-stat-card">
-            <div class="gnh-stat-value" gnh-text="stats.completed_jobs">-</div>
-            <div class="gnh-stat-label">Completed</div>
-          </div>
-          <div class="gnh-stat-card">
-            <div class="gnh-stat-value" gnh-text="stats.failed_jobs">-</div>
-            <div class="gnh-stat-label">Failed</div>
-          </div>
-        </div>
-
-        <!-- Recent Jobs Section with Data Binding Templates -->
-        <div class="gnh-jobs-section">
-          <div class="gnh-section-header">
-            <h3>Recent Jobs</h3>
-            <div class="gnh-section-actions">
-              <button
-                class="gnh-btn gnh-btn-secondary"
-                gnh-action="refresh-dashboard"
-                aria-label="Refresh jobs list"
-              >
-                <span>↻</span> Refresh
-              </button>
-              <button
-                class="gnh-btn gnh-btn-primary"
-                gnh-action="create-job"
-                aria-label="Create a new job"
-              >
-                <span>+</span> New Job
-              </button>
-            </div>
-          </div>
-
-          <div class="gnh-jobs-list">
-            <!-- Job Template — hidden by dashboard.js module; kept for legacy binder compatibility -->
-            <div class="gnh-job-card" gnh-template="job" style="display: none">
-              <div class="gnh-job-header">
-                <div class="gnh-job-domain" gnh-text="domain">example.com</div>
-                <div
-                  gnh-class="gnh-job-status gnh-status-{status}"
-                  gnh-text="status"
-                >
-                  pending
-                </div>
-              </div>
-              <div class="gnh-job-progress">
-                <div class="gnh-progress-bar">
-                  <div
-                    class="gnh-progress-fill"
-                    gnh-style:width="{progress}%"
-                  ></div>
-                </div>
-                <div class="gnh-job-details">
-                  <span gnh-text="completed_tasks">0</span> /
-                  <span gnh-text="total_tasks">0</span> tasks (<span
-                    gnh-text="progress"
-                    >0</span
-                  >%)
-                </div>
-              </div>
-              <div class="gnh-job-footer">
-                <div class="gnh-job-started">
-                  <span style="font-weight: 500">Started:</span>
-                  <span gnh-text="started_at_formatted">-</span>
-                </div>
-                <div class="gnh-job-actions">
-                  <a
-                    class="gnh-job-link"
-                    href="/jobs/{id}"
-                    gnh-href="/jobs/{id}"
-                    >Open Job</a
-                  >
-                  <button
-                    class="gnh-job-link"
-                    gnh-action="restart-job"
-                    gnh-id="{id}"
-                    gnh-show="status=completed,failed,cancelled"
-                    aria-label="Restart this job"
-                  >
-                    Restart
-                  </button>
-                  <button
-                    class="gnh-job-link"
-                    gnh-action="cancel-job"
-                    gnh-id="{id}"
-                    gnh-show="status=running,pending"
-                    aria-label="Cancel this job"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </main>
-
-    <!-- Load shared authentication modal -->
-    <div id="authModalContainer"></div>
-
-    <!-- Job Creation Modal -->
-    <div id="createJobModal" class="gnh-modal">
-      <div class="gnh-modal-content" style="max-width: 600px">
-        <div class="gnh-modal-header">
-          <h2 class="gnh-modal-title">Create New Job</h2>
-          <button
-            class="gnh-modal-close"
-            gnh-action="close-create-job-modal"
-            aria-label="Close create job modal"
-          >
-            &times;
-          </button>
-        </div>
-
-        <form id="createJobForm" class="gnh-auth-form">
-          <div class="gnh-form-group">
-            <label for="jobDomain">Domain</label>
-            <div class="gnh-domain-search" style="position: relative">
-              <input
-                type="text"
-                id="jobDomain"
-                name="domain"
-                gnh-domain-create="auto"
-                required
-                placeholder="example.com"
-                class="gnh-form-input"
-                aria-label="Domain to crawl"
+    </div>
+    <main class="app-shell dashboard-shell">
+      <section class="panel" id="guestState">
+        <div class="section auth-wrapper dashboard-auth-wrapper">
+          <header class="header auth-header">
+            <div class="top-brand">
+              <img
+                class="brand-logo"
+                src="/assets/Good-Native_Hover_App_Logo_Webflow.png"
+                alt="Hover"
               />
             </div>
-            <div
-              class="gnh-field-error"
-              id="domainError"
-              style="display: none"
-            ></div>
-          </div>
+            <p class="section-title">
+              Run site checks, review the latest report, and manage schedules
+              from the same shell used in the Webflow extension.
+            </p>
+          </header>
 
-          <div class="gnh-form-group">
-            <label for="maxPages">Maximum Pages</label>
-            <input
-              type="number"
-              id="maxPages"
-              name="max_pages"
-              min="0"
-              max="10000"
-              value="0"
-              class="gnh-form-input"
-              aria-label="Maximum number of pages to crawl"
-            />
-            <div style="font-size: 12px; color: #6b7280; margin-top: 4px">
-              Maximum number of pages to crawl (set to 0 for unlimited)
-            </div>
-          </div>
+          <ul class="icon-list">
+            <li>
+              <span
+                class="icon icon--medium icon--broken"
+                aria-hidden="true"
+              ></span>
+              <span>Broken links and slow pages in one site-focused view</span>
+            </li>
+            <li>
+              <span
+                class="icon icon--medium icon--download"
+                aria-hidden="true"
+              ></span>
+              <span>Recent reports and exports without switching screens</span>
+            </li>
+            <li>
+              <span
+                class="icon icon--medium icon--person"
+                aria-hidden="true"
+              ></span>
+              <span>Shared organisations, quotas, and schedules</span>
+            </li>
+          </ul>
 
-          <div class="gnh-form-group">
-            <label for="scheduleInterval">Schedule</label>
-            <select
-              id="scheduleInterval"
-              name="schedule_interval_hours"
-              class="gnh-form-input"
-              aria-label="Schedule frequency for recurring jobs"
-            >
-              <option value="">Run once</option>
-              <option value="6">Every 6 hours</option>
-              <option value="12">Every 12 hours</option>
-              <option value="24">Every 24 hours</option>
-              <option value="48">Every 48 hours</option>
-            </select>
-            <div style="font-size: 12px; color: #6b7280; margin-top: 4px">
-              Select a frequency to create a recurring schedule for this domain
-            </div>
-          </div>
-
-          <!-- Hidden fields with sensible defaults -->
-          <input type="hidden" id="useSitemap" name="use_sitemap" value="on" />
-          <input type="hidden" id="findLinks" name="find_links" value="on" />
-          <!-- concurrency omitted - server defaults to 20 -->
-
-          <div
-            style="
-              display: flex;
-              gap: 12px;
-              justify-content: flex-end;
-              margin-top: 32px;
-            "
-          >
+          <div class="actions auth-actions">
             <button
+              id="dashboardSignupButton"
               type="button"
-              class="gnh-button gnh-button-outline"
-              gnh-action="close-create-job-modal"
-              aria-label="Cancel job creation"
+              class="btn btn--primary btn--lg corners--right"
             >
-              Cancel
+              <span>Create account</span>
+              <span
+                class="icon icon--large icon--arrow icon--arrow--right"
+                aria-hidden="true"
+              ></span>
             </button>
+            <div class="auth-login-prompt">
+              <div class="auth-login-divider"></div>
+              <p class="auth-login-copy">Already have an account?</p>
+            </div>
             <button
-              type="submit"
-              class="gnh-button gnh-button-primary"
-              id="createJobSubmitBtn"
-              aria-label="Create the job"
+              id="dashboardLoginButton"
+              type="button"
+              class="btn btn--secondary btn--lg corners--right"
             >
-              Create Job
+              <span>Login</span>
+              <span
+                class="icon icon--large icon--arrow icon--arrow--right"
+                aria-hidden="true"
+              ></span>
             </button>
           </div>
-        </form>
-
-        <!-- Loading State -->
-        <div
-          id="createJobLoading"
-          class="gnh-auth-loading"
-          style="display: none"
-        >
-          <div class="gnh-spinner"></div>
-          <p>Creating job...</p>
         </div>
+      </section>
 
-        <!-- Error Message -->
-        <div
-          id="createJobError"
-          class="gnh-auth-error"
-          style="display: none"
-        ></div>
-      </div>
-    </div>
-
-    <!-- Create Organisation Modal -->
-    <div id="createOrgModal" class="gnh-modal">
-      <div class="gnh-modal-content" style="max-width: 440px">
-        <div class="gnh-modal-header">
-          <h2 class="gnh-modal-title">Create Organisation</h2>
+      <section class="panel hidden" id="authState">
+        <header class="topbar section">
           <button
-            class="gnh-modal-close"
-            id="closeCreateOrgModal"
-            aria-label="Close create organisation modal"
+            id="homeButton"
+            type="button"
+            class="topbar-brand-link"
+            aria-label="Open dashboard home"
           >
-            ×
+            <img
+              class="brand-logo brand-logo--topbar"
+              src="/assets/Good-Native_Hover_App_Logo_Webflow.png"
+              alt="Hover"
+            />
+          </button>
+          <div class="topbar-actions">
+            <div class="shell-notifications" id="notificationsContainer">
+              <button
+                id="notificationsBtn"
+                type="button"
+                class="btn btn--tertiary btn--sm btn--border-thin btn--icon-square shell-notifications-button"
+                aria-label="View notifications"
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                <svg
+                  class="shell-notifications-icon"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V10a6 6 0 10-12 0v4.2a2 2 0 01-.6 1.4L4 17h5"
+                  />
+                  <path d="M9.5 17a2.5 2.5 0 005 0" />
+                </svg>
+                <span
+                  id="notificationsBadge"
+                  class="shell-notifications-badge"
+                  hidden
+                  >0</span
+                >
+              </button>
+              <div
+                id="notificationsDropdown"
+                class="shell-dropdown shell-notifications-dropdown"
+              >
+                <div class="shell-dropdown-header">
+                  <span class="shell-dropdown-title">Notifications</span>
+                  <button
+                    id="markAllReadBtn"
+                    type="button"
+                    class="shell-dropdown-action"
+                  >
+                    Mark all read
+                  </button>
+                </div>
+                <div
+                  id="notificationsList"
+                  class="shell-notifications-list"
+                ></div>
+                <div class="shell-dropdown-footer">
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/notifications"
+                  >
+                    Notification settings
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <select
+              id="orgSelect"
+              class="btn btn--tertiary btn--sm btn--border-thin btn--square btn--select topbar-org-select"
+            ></select>
+
+            <div class="shell-profile-menu">
+              <button
+                id="profileMenuButton"
+                type="button"
+                class="btn btn--primary btn--icon-square corners--top-left topbar-profile"
+                aria-label="Open account menu"
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                <span class="topbar-profile-avatar" id="profileAvatar"></span>
+              </button>
+              <div
+                id="profileMenuDropdown"
+                class="shell-dropdown shell-profile-dropdown"
+              >
+                <div class="shell-profile-summary">
+                  <p id="profileEmail" class="shell-profile-email">Signed in</p>
+                  <p id="profileOrgName" class="shell-profile-org">
+                    Organisation
+                  </p>
+                  <p id="profilePlanText" class="shell-profile-plan">Plan</p>
+                  <p id="profileUsageText" class="shell-profile-usage">
+                    Usage unavailable
+                  </p>
+                </div>
+                <div class="shell-dropdown-links">
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/account"
+                  >
+                    Account
+                  </button>
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/team"
+                  >
+                    Team
+                  </button>
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/billing"
+                  >
+                    Billing
+                  </button>
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/plans"
+                  >
+                    Plans
+                  </button>
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/notifications"
+                  >
+                    Notifications
+                  </button>
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/analytics"
+                  >
+                    Analytics
+                  </button>
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/automated-jobs"
+                  >
+                    Automated jobs
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div class="action-bar section">
+          <div class="action-bar-controls">
+            <div class="control-group control-group--domain">
+              <label class="control-label" for="domainInput">Site:</label>
+              <div class="dashboard-domain-search">
+                <input
+                  id="domainInput"
+                  type="text"
+                  class="btn btn--tertiary btn--sm btn--border-thin btn--square dashboard-domain-input"
+                  placeholder="example.com"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </div>
+            </div>
+            <div class="control-group control-group--schedule">
+              <label class="control-label" for="scheduleSelect"
+                >Run every:</label
+              >
+              <select
+                id="scheduleSelect"
+                class="btn btn--tertiary btn--sm btn--border-thin btn--square btn--select action-bar-select"
+              >
+                <option value="off">Off</option>
+                <option value="6">6 hrs</option>
+                <option value="12">12 hrs</option>
+                <option value="24">24 hrs</option>
+                <option value="48">48 hrs</option>
+              </select>
+            </div>
+          </div>
+          <button
+            id="runNowButton"
+            type="button"
+            class="btn btn--primary btn--sm corners--right"
+          >
+            <span class="icon icon--small icon--bee" aria-hidden="true"></span>
+            <span>Run now</span>
           </button>
         </div>
-        <form id="createOrgForm" gnh-form="create-organisation">
-          <div class="gnh-form-group">
-            <label for="newOrgName">Organisation Name</label>
-            <input
-              type="text"
-              id="newOrgName"
-              name="name"
-              required
-              maxlength="100"
-              placeholder="Enter organisation name"
-              class="gnh-form-input"
-              aria-describedby="createOrgError"
-            />
-          </div>
-          <div
-            style="
-              display: flex;
-              gap: 12px;
-              justify-content: flex-end;
-              margin-top: 24px;
-            "
-          >
-            <button
-              type="button"
-              class="gnh-button gnh-button-outline"
-              id="cancelCreateOrg"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              class="gnh-button gnh-button-primary"
-              id="submitCreateOrg"
-            >
-              Create
-            </button>
-          </div>
-        </form>
-        <div
-          id="createOrgError"
-          class="gnh-auth-error"
-          style="display: none"
-        ></div>
-      </div>
-    </div>
 
-    <!-- ES module entrypoint -->
+        <div class="status-block section" id="statusBlock">
+          <div class="status-block-content">
+            <p id="statusText" class="status"></p>
+            <p id="detailText" class="detail"></p>
+          </div>
+        </div>
+
+        <div class="content-scroll section">
+          <section class="job-band">
+            <p id="jobSectionHeading" class="section-heading">In progress</p>
+            <div id="jobSection" class="hidden"></div>
+          </section>
+
+          <div id="noJobState" class="no-job-state hidden">
+            <p id="noJobText" class="detail">
+              Select a site to review its latest report.
+            </p>
+            <button
+              id="runFirstCheckButton"
+              type="button"
+              class="btn btn--secondary btn--sm corners--right"
+            >
+              <span>Run first check</span>
+            </button>
+          </div>
+
+          <div class="results-section">
+            <p class="section-heading">Latest report</p>
+            <div id="latestResultsList" class="results-list"></div>
+
+            <p class="section-heading">Past results</p>
+
+            <div class="chart-section" id="chartSection">
+              <div class="chart-layout">
+                <div class="chart-y-scale" aria-hidden="true">
+                  <span>100</span>
+                  <span>50</span>
+                  <span>25</span>
+                  <span>0</span>
+                </div>
+                <div class="mini-chart" id="miniChart"></div>
+              </div>
+            </div>
+
+            <div id="recentResultsList" class="results-list"></div>
+          </div>
+        </div>
+
+        <footer class="panel-footer section">
+          <button
+            id="feedbackButton"
+            type="button"
+            class="btn btn--ghost btn--footer-link"
+          >
+            Feedback
+          </button>
+          <button
+            id="helpButton"
+            type="button"
+            class="btn btn--ghost btn--footer-link"
+          >
+            Help
+          </button>
+        </footer>
+      </section>
+    </main>
+
     <script type="module" src="/app/pages/dashboard.js"></script>
   </body>
 </html>

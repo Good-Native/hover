@@ -50,6 +50,7 @@
     <script>
       (function () {
         const path = window.location.pathname.replace(/\/$/, "");
+        const params = new URLSearchParams(window.location.search);
         const sectionMap = {
           "/settings": "account",
           "/settings/account": "account",
@@ -64,11 +65,38 @@
         };
         const target = sectionMap[path] || "account";
         document.documentElement.setAttribute("data-settings-section", target);
+        if (params.get("surface") === "webflow-extension") {
+          document.documentElement.setAttribute(
+            "data-surface-context",
+            "webflow-extension"
+          );
+        }
       })();
     </script>
   </head>
   <body class="page-settings gnh-auth-route-gated">
-    <script type="module" src="/app/lib/global-nav.js"></script>
+    <script type="module">
+      import { isWebflowExtensionSurface } from "/app/lib/surface-context.js";
+
+      if (!isWebflowExtensionSurface()) {
+        import("/app/lib/global-nav.js");
+      }
+    </script>
+    <div id="surfaceContextBar" class="surface-context-bar" hidden>
+      <div class="surface-context-meta">
+        <a
+          id="surfaceContextBack"
+          class="surface-context-back"
+          href="/dashboard"
+        >
+          Back to extension
+        </a>
+        <div>
+          <p id="surfaceContextTitle" class="surface-context-title">Settings</p>
+          <p id="surfaceContextSubtitle" class="surface-context-subtitle"></p>
+        </div>
+      </div>
+    </div>
     <main class="settings-main">
       <div class="settings-container">
         <aside class="settings-nav">

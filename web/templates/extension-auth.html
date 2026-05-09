@@ -7,19 +7,15 @@
     <title>Hover — Connect to Webflow</title>
 
     <!--
-      Phase 1 loading pattern:
+      Extension auth loading pattern:
       1. /config.js       — sets window.GNH_CONFIG (server-rendered)
-      2. /js/auth.js      — GNHAuth helpers; still loaded as legacy script
-                            while the auth modal component is pre-module
-      3. Supabase SDK     — CDN UMD, sets window.supabase
-      4. module entry     — /app/pages/webflow-login.js (ES module)
+      2. Supabase SDK     — CDN UMD namespace, used by the module bootstrap
+      3. module entry     — /app/pages/webflow-login.js (ES module)
 
-      No gnh-bootstrap.js. No core.js. No GNH_APP.whenReady().
-      The extensionAuth flag is set inside webflow-login.js before any
-      auth action, preserving the auth redirect contract from AGENTS.md.
+      No legacy auth bundle on this page. The popup owns its auth UI and
+      OAuth return flow through the app/ module layer.
     -->
     <script src="/config.js"></script>
-    <script src="/js/auth.js" defer></script>
     <script
       src="https://unpkg.com/@supabase/supabase-js@2.95.3/dist/umd/supabase.js"
       integrity="sha384-g8TQpKstPpyDTjwOLNQvGR++9KAGGvtxWv+P5XmDd3QZQx1jie8r1hx0gVpD+cdb"
@@ -111,6 +107,10 @@
       .extension-auth-reopen:hover {
         border-color: var(--border-colour--active);
         color: var(--text-colour--primary);
+      }
+
+      .extension-auth-reopen[hidden] {
+        display: none;
       }
     </style>
   </head>

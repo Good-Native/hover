@@ -75,4 +75,10 @@ supabase/.branches/
 
 # Worktrees
 .worktrees/
+<<<<<<< feat/shared-extension-site-jobs
+
+# Local Webflow extension dev overrides
+webflow-designer-extension-cli/public/dev-runtime-config.js
+=======
 .claude/worktrees/
+>>>>>>> main

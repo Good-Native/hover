@@ -297,7 +297,7 @@ func TestCORSMiddleware(t *testing.T) {
 
 			// Check CORS headers are set
 			assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
-			assert.Equal(t, "GET, POST, PUT, DELETE, OPTIONS", rec.Header().Get("Access-Control-Allow-Methods"))
+			assert.Equal(t, "GET, POST, PUT, PATCH, DELETE, OPTIONS", rec.Header().Get("Access-Control-Allow-Methods"))
 			assert.Equal(t, "Content-Type, Authorization, X-Request-ID", rec.Header().Get("Access-Control-Allow-Headers"))
 			assert.Equal(t, "X-Request-ID", rec.Header().Get("Access-Control-Expose-Headers"))
 
@@ -382,9 +382,36 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 	assert.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))
 	assert.Contains(t, rec.Header().Get("Content-Security-Policy"), "default-src 'self'")
 	assert.Contains(t, rec.Header().Get("Content-Security-Policy"), "connect-src")
+	assert.Contains(t, rec.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'")
 	assert.Contains(t, rec.Header().Get("Content-Security-Policy"), "http://127.0.0.1:8765")
 	assert.Contains(t, rec.Header().Get("Content-Security-Policy"), "http://localhost:8765")
+	assert.Contains(t, rec.Header().Get("Content-Security-Policy"), "https://lh3.googleusercontent.com")
 	assert.Equal(t, "max-age=63072000; includeSubDomains", rec.Header().Get("Strict-Transport-Security"))
+}
+
+func TestSecurityHeadersMiddlewareAllowsWebflowExtensionSurfacePages(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middlewareHandler := SecurityHeadersMiddleware(handler)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/settings/account?surface=webflow-extension",
+		nil,
+	)
+	rec := httptest.NewRecorder()
+
+	middlewareHandler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "", rec.Header().Get("X-Frame-Options"))
+	assert.Contains(
+		t,
+		rec.Header().Get("Content-Security-Policy"),
+		"frame-ancestors 'self' https://webflow.com https://*.webflow.com http://localhost:1337 http://127.0.0.1:1337",
+	)
 }
 
 func TestMiddlewareChaining(t *testing.T) {

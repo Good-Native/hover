@@ -48,6 +48,10 @@ import {
 import { initCreateOrgModal } from "/app/lib/settings/organisations.js";
 import { initAdminResetButton } from "/app/lib/admin.js";
 import { handleInviteTokenFlow } from "/app/lib/invite-flow.js";
+import {
+  initSurfacePage,
+  rewriteSurfaceLinks,
+} from "/app/lib/surface-context.js";
 import { showToast as _showToast } from "/app/components/hover-toast.js";
 
 function toast(variant, message) {
@@ -318,6 +322,11 @@ async function init() {
   if (!session?.data?.session?.user) return;
 
   // Navigation (sidebar, tabs, deep-linking).
+  initSurfacePage({
+    title: "Settings",
+    defaultReturnPath: "/dashboard",
+  });
+  rewriteSurfaceLinks(document.querySelectorAll(".settings-link"));
   setupSettingsNavigation();
   setupPlanTabs();
   setupAutomationTabs();

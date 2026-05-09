@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="./styles/shell.css" rel="stylesheet" />
     <link href="./styles.css" rel="stylesheet" />
     <title>Hover for Webflow</title>
     <!-- Import map: remap /app/ paths used by shared modules to local copies -->
@@ -104,31 +105,162 @@
 
       <!-- ═══ AUTH STATE ═══ -->
       <section class="panel hidden" id="authState">
-        <!-- ─── Top bar: org + plan + settings ─── -->
         <header class="topbar section">
           <button
-            id="settingsButton"
+            id="homeButton"
             type="button"
-            class="btn btn--primary btn--icon-square corners--top-left topbar-profile"
-            title="Settings"
-            aria-label="Settings"
+            class="topbar-brand-link"
+            aria-label="Open Hover dashboard"
           >
-            <span class="topbar-profile-avatar" aria-hidden="true"></span>
+            <img
+              class="brand-logo brand-logo--topbar"
+              src="./Hover Logo Bright Transparent.png"
+              alt="Hover"
+            />
           </button>
-          <div class="topbar-content">
+
+          <div class="topbar-actions">
+            <div class="shell-notifications" id="notificationsContainer">
+              <button
+                id="notificationsBtn"
+                type="button"
+                class="btn btn--tertiary btn--sm btn--border-thin btn--icon-square shell-notifications-button"
+                aria-label="View notifications"
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                <svg
+                  class="shell-notifications-icon"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V10a6 6 0 10-12 0v4.2a2 2 0 01-.6 1.4L4 17h5"
+                  />
+                  <path d="M9.5 17a2.5 2.5 0 005 0" />
+                </svg>
+                <span
+                  id="notificationsBadge"
+                  class="shell-notifications-badge"
+                  hidden
+                  >0</span
+                >
+              </button>
+              <div
+                id="notificationsDropdown"
+                class="shell-dropdown shell-notifications-dropdown"
+              >
+                <div class="shell-dropdown-header">
+                  <span class="shell-dropdown-title">Notifications</span>
+                  <button
+                    id="markAllReadBtn"
+                    type="button"
+                    class="shell-dropdown-action"
+                  >
+                    Mark all read
+                  </button>
+                </div>
+                <div
+                  id="notificationsList"
+                  class="shell-notifications-list"
+                ></div>
+                <div class="shell-dropdown-footer">
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/notifications"
+                  >
+                    Notification settings
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <select
               id="orgSelect"
               class="btn btn--tertiary btn--sm btn--border-thin btn--square btn--select topbar-org-select"
             ></select>
-            <div class="topbar-plan">
-              <div class="plan-badge">
-                <p class="plan-badge-title" id="planNameText">
-                  <strong>Plan:</strong> —
-                </p>
-                <p class="plan-badge-remaining" id="planRemainingText">
-                  <span class="dot dot--success"></span>
-                  <span id="planRemainingValue">—</span>
-                </p>
+
+            <div class="shell-profile-menu">
+              <button
+                id="profileMenuButton"
+                type="button"
+                class="btn btn--primary btn--icon-square corners--top-left topbar-profile"
+                aria-label="Open account menu"
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                <span
+                  class="topbar-profile-avatar"
+                  id="profileAvatar"
+                  aria-hidden="true"
+                ></span>
+              </button>
+              <div
+                id="profileMenuDropdown"
+                class="shell-dropdown shell-profile-dropdown"
+              >
+                <div class="shell-profile-summary">
+                  <p id="profileEmail" class="shell-profile-email">Signed in</p>
+                  <p id="profileOrgName" class="shell-profile-org">
+                    Organisation
+                  </p>
+                  <p id="profilePlanText" class="shell-profile-plan">Plan</p>
+                  <p id="profileUsageText" class="shell-profile-usage">
+                    Usage unavailable
+                  </p>
+                </div>
+                <div class="shell-dropdown-links">
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/account"
+                  >
+                    Account
+                  </button>
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/team"
+                  >
+                    Team
+                  </button>
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/billing"
+                  >
+                    Billing
+                  </button>
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/plans"
+                  >
+                    Plans
+                  </button>
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/notifications"
+                  >
+                    Notifications
+                  </button>
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/analytics"
+                  >
+                    Analytics
+                  </button>
+                  <button
+                    type="button"
+                    class="shell-dropdown-link"
+                    data-path="/settings/automated-jobs"
+                  >
+                    Automated jobs
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -267,6 +399,193 @@
             Help
           </button>
         </footer>
+
+        <section
+          id="settingsAccountView"
+          class="section extension-settings-shell hidden"
+        >
+          <div class="extension-settings-layout">
+            <aside class="extension-settings-sidebar">
+              <div class="extension-settings-sidebar-topline">
+                <button
+                  id="settingsBackButton"
+                  type="button"
+                  class="btn btn--ghost btn--text extension-settings-back"
+                >
+                  ← Back
+                </button>
+                <span class="extension-settings-topline-label">Settings</span>
+              </div>
+
+              <div class="extension-settings-nav-group">
+                <p
+                  id="settingsProfileGroupTitle"
+                  class="extension-settings-group-title"
+                >
+                  Profile
+                </p>
+                <nav
+                  class="extension-settings-nav"
+                  aria-label="Profile settings"
+                >
+                  <button
+                    type="button"
+                    class="extension-settings-nav-link active"
+                    data-settings-path="/settings/account"
+                  >
+                    Account
+                  </button>
+                </nav>
+              </div>
+
+              <div class="extension-settings-nav-divider"></div>
+
+              <div class="extension-settings-nav-group">
+                <p
+                  id="settingsOrgGroupTitle"
+                  class="extension-settings-group-title"
+                >
+                  Manage organisation
+                </p>
+                <nav
+                  class="extension-settings-nav"
+                  aria-label="Organisation settings"
+                >
+                  <button
+                    type="button"
+                    class="extension-settings-nav-link"
+                    data-settings-path="/settings/team"
+                  >
+                    Team
+                  </button>
+                  <button
+                    type="button"
+                    class="extension-settings-nav-link"
+                    data-settings-path="/settings/plans"
+                  >
+                    Plans
+                  </button>
+                  <button
+                    type="button"
+                    class="extension-settings-nav-link"
+                    data-settings-path="/settings/billing"
+                  >
+                    Billing
+                  </button>
+                  <button
+                    type="button"
+                    class="extension-settings-nav-link"
+                    data-settings-path="/settings/notifications"
+                  >
+                    Notifications
+                  </button>
+                  <button
+                    type="button"
+                    class="extension-settings-nav-link"
+                    data-settings-path="/settings/analytics"
+                  >
+                    Analytics
+                  </button>
+                  <button
+                    type="button"
+                    class="extension-settings-nav-link"
+                    data-settings-path="/settings/automated-jobs"
+                  >
+                    Automated jobs
+                  </button>
+                </nav>
+              </div>
+            </aside>
+
+            <section class="extension-settings-main">
+              <div class="extension-settings-header">
+                <div>
+                  <h2 class="extension-settings-title">Account</h2>
+                  <div class="extension-settings-header-divider"></div>
+                </div>
+              </div>
+
+              <section
+                id="extensionAccountSection"
+                class="extension-settings-section"
+              >
+                <div class="settings-card" id="profile">
+                  <div class="settings-row">
+                    <div>
+                      <label for="settingsUserFirstNameInput"
+                        ><strong>Name</strong></label
+                      >
+                      <div class="settings-profile-edit">
+                        <input
+                          class="settings-input"
+                          id="settingsUserFirstNameInput"
+                          type="text"
+                          maxlength="80"
+                          placeholder="First name"
+                        />
+                        <input
+                          class="settings-input"
+                          id="settingsUserLastNameInput"
+                          type="text"
+                          maxlength="80"
+                          placeholder="Last name"
+                          aria-label="Last name"
+                        />
+                        <button
+                          class="btn btn--secondary btn--sm extension-settings-save"
+                          id="settingsSaveName"
+                          type="button"
+                        >
+                          Save name
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="settings-row">
+                    <div>
+                      <strong>Email</strong>
+                      <div class="settings-muted" id="settingsUserEmail">
+                        Loading...
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-card" id="security">
+                  <div class="settings-row">
+                    <div>
+                      <strong>Password</strong>
+                      <div
+                        class="settings-muted"
+                        id="settingsPasswordMethodStatus"
+                      >
+                        Email/password sign-in status: loading...
+                      </div>
+                    </div>
+                    <button
+                      class="btn btn--secondary btn--sm"
+                      id="settingsResetPassword"
+                      type="button"
+                    >
+                      Send reset email
+                    </button>
+                  </div>
+                  <div class="settings-row">
+                    <div>
+                      <strong>Authentication methods</strong>
+                      <div
+                        class="settings-auth-methods"
+                        id="settingsAuthMethods"
+                      >
+                        <span class="settings-muted">Loading...</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </section>
+          </div>
+        </section>
       </section>
     </main>
 
@@ -286,6 +605,10 @@
     <script type="module" src="./hover-data-table.js"></script>
     <script type="module" src="./hover-job-card.js"></script>
     <script type="module" src="./lib/bridge.js"></script>
+    <script>
+      window.HOVER_EXTENSION_CONFIG = window.HOVER_EXTENSION_CONFIG || {};
+    </script>
+    <script src="./dev-runtime-config.js" defer></script>
     <script src="index.js" defer></script>
   </body>
 </html>

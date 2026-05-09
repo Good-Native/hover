@@ -5,7 +5,7 @@
  * Uses api-client for the POST request.
  */
 
-import { post } from "/app/lib/api-client.js";
+import { createOrganisation } from "/app/lib/organisation-api.js";
 import { showToast as _showToast } from "/app/components/hover-toast.js";
 
 function toast(variant, message) {
@@ -72,11 +72,8 @@ export function initCreateOrgModal(options = {}) {
     errorDiv.style.display = "none";
 
     try {
-      // api-client unwraps the { status, data } envelope — returns data directly.
-      const data = await post("/v1/organisations", { name });
+      const newOrg = await createOrganisation(name);
       closeModal();
-
-      const newOrg = data?.organisation;
 
       // Update shared org data (bridge to legacy globals).
       window.GNH_ACTIVE_ORG = newOrg;

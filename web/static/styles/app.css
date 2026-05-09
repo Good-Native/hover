@@ -3242,6 +3242,65 @@ body.page-job-details {
   min-height: 100vh;
 }
 
+.surface-context-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+html[data-surface-context="webflow-extension"] .surface-context-bar {
+  display: flex;
+}
+
+.surface-context-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.surface-context-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.surface-context-back:hover {
+  background: #eff6ff;
+}
+
+.surface-context-title,
+.surface-context-subtitle {
+  margin: 0;
+}
+
+.surface-context-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.surface-context-subtitle {
+  font-size: 12px;
+  color: #64748b;
+}
+
+html[data-surface-context="webflow-extension"] .global-nav {
+  display: none !important;
+}
+
 /* Job Details */
 body.page-job-details {
   color-scheme: light;
@@ -3317,6 +3376,13 @@ body.page-job-details main {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+html[data-surface-context="webflow-extension"]
+  body.page-settings
+  .settings-main,
+html[data-surface-context="webflow-extension"] body.page-job-details main {
+  margin-top: 24px;
 }
 
 body.page-job-details section {

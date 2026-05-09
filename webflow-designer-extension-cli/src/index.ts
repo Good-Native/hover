@@ -12,6 +12,14 @@ type SupabaseClient = {
       access_token: string;
       refresh_token: string;
     }) => Promise<unknown>;
+    getUser?: () => Promise<{
+      data?: {
+        user?: {
+          email?: string | null;
+          user_metadata?: Record<string, unknown> | null;
+        } | null;
+      };
+    }>;
   };
   channel: (name: string) => RealtimeChannel;
   removeChannel: (channel: RealtimeChannel) => Promise<unknown>;
@@ -30,24 +38,25 @@ type RealtimeChannel = {
 
 const API_BASE_STORAGE_KEY = "gnh_extension_api_base";
 const API_TOKEN_STORAGE_KEY = "gnh_extension_api_token_session";
+const ACTIVE_ORG_STORAGE_KEY = "gnh_active_org_id";
 const AUTH_POPUP_WIDTH = 520;
 const AUTH_POPUP_HEIGHT = 760;
 const DEFAULT_GNH_APP_ORIGIN = "https://hover.app.goodnative.co";
-const LEGACY_EXTENSION_APP_ORIGINS = new Set(["https://hover-pr-255.fly.dev"]);
 const AUTH_POPUP_NAME = "bbbExtensionAuth";
 const SCHEDULE_PLACEHOLDER = "off";
 const SCHEDULE_OPTIONS = ["off", "6", "12", "24", "48"] as const;
 const JOB_POLLING_INTERVAL_MS = 6000;
-
-// Realtime subscription constants (mirrors dashboard pattern)
-const REALTIME_DEBOUNCE_MS = 250;
-const SUBSCRIBE_RETRY_INTERVAL_MS = 1000;
 const FALLBACK_POLLING_INTERVAL_MS = 1000;
-const MAX_SUBSCRIBE_RETRIES = 15;
+const ACCOUNT_SETTINGS_EXTENSION_SIZE = { width: 620, height: 660 } as const;
 
 const APP_ROUTES = {
   dashboard: "/dashboard",
   viewJob: "/jobs",
+  account: "/settings/account",
+  billing: "/settings/billing",
+  notifications: "/settings/notifications",
+  analytics: "/settings/analytics",
+  automatedJobs: "/settings/automated-jobs",
   changePlan: "/settings/plans",
   manageTeam: "/settings/team",
 } as const;
@@ -87,6 +96,13 @@ declare const webflow: {
   setExtensionSize: (size: ExtensionPanelSize) => Promise<null>;
 };
 
+type ExtensionWindow = Window & {
+  HOVER_EXTENSION_CONFIG?: {
+    appOrigin?: string;
+  };
+  HOVER_EXTENSION_SUPABASE_CLIENT?: SupabaseClient | null;
+};
+
 // Shared modules exposed by lib/bridge.js via window.HoverLib
 declare const HoverLib: {
   api: {
@@ -108,6 +124,18 @@ declare const HoverLib: {
     put: (path: string, body?: unknown, init?: RequestInit) => Promise<unknown>;
     del: (path: string, init?: RequestInit) => Promise<unknown>;
     request: (path: string, init?: RequestInit) => Promise<unknown>;
+  };
+  exports: {
+    downloadJobExport: (
+      jobId: string,
+      options?: {
+        api?: typeof HoverLib.api;
+      }
+    ) => Promise<{
+      empty: boolean;
+      filename: string;
+      taskCount: number;
+    }>;
   };
   fmt: {
     formatDate: (value: string | null | undefined) => string;
@@ -138,9 +166,206 @@ declare const HoverLib: {
       context?: string
     ) => Promise<Response>;
   };
+  organisations: {
+    loadOrganisationContext: (options?: {
+      api?: typeof HoverLib.api;
+      includeUsage?: boolean;
+    }) => Promise<{
+      organisations: unknown[];
+      activeOrganisationId: string;
+      usage: unknown | null;
+    }>;
+    switchOrganisation: (
+      organisationId: string,
+      options?: { api?: typeof HoverLib.api }
+    ) => Promise<unknown | null>;
+  };
+  schedulers: {
+    findSchedulerByDomain: (
+      domain: string,
+      options?: {
+        api?: typeof HoverLib.api;
+        schedulers?: unknown[];
+      }
+    ) => Promise<unknown | null>;
+    saveSchedulerForDomain: (
+      domain: string,
+      scheduleIntervalHours: number,
+      options?: {
+        api?: typeof HoverLib.api;
+        currentScheduler?: unknown | null;
+        extra?: Record<string, unknown>;
+      }
+    ) => Promise<unknown>;
+    disableScheduler: (
+      schedulerId: string,
+      options?: {
+        api?: typeof HoverLib.api;
+        expectedIsEnabled?: boolean;
+      }
+    ) => Promise<unknown>;
+  };
+  jobs: {
+    fetchJobs: (options?: {
+      limit?: number;
+      range?: string;
+      include?: string;
+    }) => Promise<unknown[]>;
+    normaliseDomain: (input: string) => string;
+    filterJobsByDomains: (
+      jobs: unknown[],
+      options?: { siteDomain?: string | null; siteDomainCandidates?: string[] }
+    ) => unknown[];
+    pickLatestJobByDomains: (
+      jobs: unknown[],
+      options?: { siteDomain?: string | null; siteDomainCandidates?: string[] }
+    ) => unknown | null;
+    buildCompletedJobsSignature: (
+      jobs: unknown[],
+      options?: { siteDomain?: string | null; siteDomainCandidates?: string[] },
+      isActiveJobStatus?: (status: string) => boolean
+    ) => string;
+    buildChartJobsSignature: (
+      jobs: unknown[],
+      options?: { siteDomain?: string | null; siteDomainCandidates?: string[] }
+    ) => string;
+    subscribeToJobUpdates: (options: {
+      orgId: string;
+      onUpdate: () => void;
+      supabaseClient?: SupabaseClient | null;
+      channelName?: string;
+      getFallbackInterval?: () => number;
+      onSubscriptionIssue?: (status?: string, err?: Error) => void;
+    }) => () => void;
+  };
+  shell: {
+    initSurfaceShell: (options?: {
+      profileButton?: HTMLElement | null;
+      profileDropdown?: HTMLElement | null;
+      notificationsContainer?: HTMLElement | null;
+      notificationsButton?: HTMLElement | null;
+      notificationsDropdown?: HTMLElement | null;
+      notificationsList?: HTMLElement | null;
+      notificationsBadge?: HTMLElement | null;
+      markAllReadButton?: HTMLElement | null;
+      onNavigate?: (path: string) => void;
+      onSignOut?: () => Promise<void> | void;
+      fetchNotifications?: (limit: number) => Promise<unknown>;
+      markNotificationRead?: (id: string) => Promise<void>;
+      markAllNotificationsRead?: () => Promise<void>;
+      subscribeToNotifications?: (
+        orgId: string,
+        onEvent: () => void
+      ) => Promise<() => void> | (() => void);
+    }) => {
+      refreshNotifications: (limit?: number) => Promise<unknown>;
+      renderNotificationsList: (limit?: number) => Promise<void>;
+      setActiveOrganisation: (nextOrganisationId: string) => void;
+      destroy: () => void;
+    };
+    renderProfileMenuSummary: (options?: {
+      emailNode?: Element | null;
+      organisationNode?: Element | null;
+      planNode?: Element | null;
+      usageNode?: Element | null;
+      email?: string;
+      organisationName?: string;
+      usage?: unknown | null;
+    }) => void;
+  };
+  settings: {
+    account: {
+      loadAccountDetails: (container: HTMLElement | null) => Promise<void>;
+      setupAccountActions: (
+        container: HTMLElement | null,
+        options?: { onNameSaved?: () => void }
+      ) => void;
+    };
+  };
+  view: {
+    renderUserAvatar: (options?: {
+      element?: HTMLElement | null;
+      displayName?: string;
+      email?: string;
+      avatarUrl?: string;
+    }) => Promise<void>;
+    renderUsage: (options?: {
+      usage?: unknown | null;
+      planNameText?: Element | null;
+      planRemainingValue?: Element | null;
+      profilePlanText?: Element | null;
+      profileUsageText?: Element | null;
+    }) => void;
+    renderOrganisations: (options?: {
+      select?: HTMLSelectElement | null;
+      organisations?: unknown[];
+      activeOrganisationId?: string;
+      emptyLabel?: string;
+    }) => void;
+    renderScheduleState: (options?: {
+      select?: HTMLSelectElement | null;
+      currentScheduler?: unknown | null;
+      placeholder?: string;
+      allowedValues?: string[];
+    }) => void;
+    renderJobState: (options?: {
+      jobSection?: HTMLElement | null;
+      job?: unknown | null;
+      isActiveJobStatus?: (status: string) => boolean;
+      context?: string;
+      onViewJob?: (path: string, job?: unknown) => void;
+      onExportJob?: (jobId: string, job?: unknown) => void;
+    }) => void;
+    renderRecentResults: (options?: {
+      latestResultsList?: HTMLElement | null;
+      recentResultsList?: HTMLElement | null;
+      noJobState?: HTMLElement | null;
+      noJobText?: Element | null;
+      noJobActionButton?: HTMLElement | null;
+      jobs?: unknown[];
+      siteDomain?: string | null;
+      siteDomainCandidates?: string[];
+      isActiveJobStatus?: (status: string) => boolean;
+      context?: string;
+      onViewJob?: (path: string, job?: unknown) => void;
+      onExportJob?: (jobId: string, job?: unknown) => void;
+      emptySelectionMessage?: string;
+      emptySiteMessage?: string;
+      emptyCompletedMessage?: string;
+      showEmptyAction?: boolean;
+    }) => void;
+    renderMiniChart: (options?: {
+      miniChart?: HTMLElement | null;
+      chartScaleLabels?: Element[];
+      jobs?: unknown[];
+      siteDomain?: string | null;
+      siteDomainCandidates?: string[];
+      onViewJob?: (path: string, job?: unknown) => void;
+    }) => void;
+  };
+  webflow: {
+    startWebflowConnection: () => Promise<{ auth_url?: string }>;
+    listWebflowConnections: () => Promise<unknown[]>;
+    findMatchingWebflowSite: (options: {
+      api?: typeof HoverLib.api;
+      connections?: unknown[];
+      siteDomain?: string | null;
+      siteDomainCandidates?: string[];
+      limit?: number;
+    }) => Promise<unknown | null>;
+    setWebflowSiteAutoPublish: (
+      siteId: string,
+      options: {
+        api?: typeof HoverLib.api;
+        connectionId: string;
+        enabled: boolean;
+      }
+    ) => Promise<void>;
+  };
 };
 
 type ScheduleOption = (typeof SCHEDULE_OPTIONS)[number] | "";
+type ExtensionView = "dashboard" | "settings-account";
 
 type ApiError = {
   status: number;
@@ -153,11 +378,6 @@ type Organisation = {
   name: string;
 };
 
-type OrganisationsResponse = {
-  organisations: Organisation[];
-  active_organisation_id?: string;
-};
-
 type UsageStats = {
   daily_limit: number;
   daily_used: number;
@@ -165,10 +385,6 @@ type UsageStats = {
   usage_percentage: number;
   plan_name: string;
   plan_display_name: string;
-};
-
-type UsageResponse = {
-  usage: UsageStats;
 };
 
 type JobItem = {
@@ -202,25 +418,6 @@ type JobItem = {
   };
 };
 
-type ExportColumn = {
-  key: string;
-  label: string;
-};
-
-type JobExportPayload = {
-  job_id: string;
-  domain?: string;
-  export_time?: string;
-  completed_at?: string | null;
-  export_type?: string;
-  columns?: ExportColumn[];
-  tasks?: Record<string, unknown>[];
-};
-
-type JobListResponse = {
-  jobs: JobItem[];
-};
-
 type Scheduler = {
   id: string;
   domain: string;
@@ -248,13 +445,6 @@ type WebflowSiteSetting = {
   auto_publish_enabled: boolean;
   schedule_interval_hours?: number;
   scheduler_id?: string;
-};
-
-type WebflowSitesResponse = {
-  sites: WebflowSiteSetting[];
-  pagination?: {
-    has_next: boolean;
-  };
 };
 
 type AuthMessage = {
@@ -292,103 +482,24 @@ function extractErrorMessage(rawBody?: string): string {
   return rawBody;
 }
 
-// ---------------------------------------------------------------------------
-// Avatar helpers
-// ---------------------------------------------------------------------------
-
-async function getGravatarUrl(email: string, size = 80): Promise<string> {
-  const normalised = (email || "").trim().toLowerCase();
-  if (!normalised || !globalThis.crypto?.subtle) return "";
-  try {
-    const data = new TextEncoder().encode(normalised);
-    const digest = await globalThis.crypto.subtle.digest("SHA-256", data);
-    const hash = [...new Uint8Array(digest)]
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    const params = new URLSearchParams({ s: String(size), d: "404" });
-    return `https://www.gravatar.com/avatar/${hash}?${params.toString()}`;
-  } catch {
-    return "";
-  }
-}
-
-async function renderAvatar(
-  target: HTMLElement,
-  email: string,
-  initials: string
-): Promise<void> {
-  const existingImg = target.querySelector("img");
-  if (existingImg) existingImg.remove();
-
-  target.textContent = initials;
-
-  const url = await getGravatarUrl(email, 80);
-  if (!url) return;
-
-  const img = document.createElement("img");
-  img.src = url;
-  img.alt = "User avatar";
-  img.loading = "lazy";
-  img.decoding = "async";
-  img.addEventListener(
-    "load",
-    () => {
-      target.textContent = "";
-      target.appendChild(img);
-    },
-    { once: true }
-  );
-  img.addEventListener(
-    "error",
-    () => {
-      if (img.parentNode) img.parentNode.removeChild(img);
-      target.textContent = initials;
-    },
-    { once: true }
-  );
-}
-
 async function updateAvatarFromState(): Promise<void> {
-  const avatarEl = document.querySelector<HTMLElement>(
-    ".topbar-profile-avatar"
-  );
+  const avatarEl = ui.profileAvatar as HTMLElement | null;
   if (!avatarEl) return;
 
-  const displayName = state.userDisplayName || state.userEmail || "";
-  const initials = displayName ? HoverLib.fmt.getInitials(displayName) : "?";
+  await HoverLib.view.renderUserAvatar({
+    element: avatarEl,
+    displayName: state.userDisplayName || state.userEmail || "",
+    email: state.userEmail || "",
+    avatarUrl: state.userAvatarUrl || "",
+  });
+}
 
-  // Use the OAuth avatar_url from the auth postMessage if available,
-  // otherwise fall back to Gravatar via the shared renderAvatar helper.
-  if (state.userAvatarUrl) {
-    const existingImg = avatarEl.querySelector("img");
-    if (existingImg) existingImg.remove();
-    avatarEl.textContent = initials;
-
-    const img = document.createElement("img");
-    img.src = state.userAvatarUrl;
-    img.alt = "User avatar";
-    img.loading = "lazy";
-    img.decoding = "async";
-    img.addEventListener(
-      "load",
-      () => {
-        avatarEl.textContent = "";
-        avatarEl.appendChild(img);
-      },
-      { once: true }
-    );
-    img.addEventListener(
-      "error",
-      () => {
-        if (img.parentNode) img.parentNode.removeChild(img);
-        avatarEl.textContent = initials;
-      },
-      { once: true }
-    );
-    return;
-  }
-
-  await renderAvatar(avatarEl, state.userEmail ?? "", initials);
+function getActiveOrganisationName(): string {
+  return (
+    state.organisations.find(
+      (organisation) => organisation.id === state.activeOrganisationId
+    )?.name || "Organisation"
+  );
 }
 
 const ui = {
@@ -406,13 +517,24 @@ const ui = {
   signInButton: document.getElementById("signInButton"),
 
   // Top bar
+  homeButton: document.getElementById("homeButton"),
+  profileMenuButton: document.getElementById("profileMenuButton"),
+  profileMenuDropdown: document.getElementById("profileMenuDropdown"),
+  profileAvatar: document.getElementById("profileAvatar"),
+  profileEmail: document.getElementById("profileEmail"),
+  profileOrgName: document.getElementById("profileOrgName"),
+  profilePlanText: document.getElementById("profilePlanText"),
+  profileUsageText: document.getElementById("profileUsageText"),
+  notificationsContainer: document.getElementById("notificationsContainer"),
+  notificationsButton: document.getElementById("notificationsBtn"),
+  notificationsDropdown: document.getElementById("notificationsDropdown"),
+  notificationsList: document.getElementById("notificationsList"),
+  notificationsBadge: document.getElementById("notificationsBadge"),
+  markAllReadButton: document.getElementById("markAllReadBtn"),
   orgSelect: document.getElementById("orgSelect") as HTMLSelectElement | null,
-  planNameText: document.getElementById("planNameText"),
-  planRemainingText: document.getElementById("planRemainingText"),
-  planRemainingValue: document.getElementById("planRemainingValue"),
-  settingsButton: document.getElementById("settingsButton"),
 
   // Action bar
+  actionBar: document.querySelector(".action-bar"),
   runNowButton: document.getElementById("runNowButton"),
   scheduleSelect: document.getElementById(
     "scheduleSelect"
@@ -439,6 +561,15 @@ const ui = {
   // Footer
   feedbackButton: document.getElementById("feedbackButton"),
   helpButton: document.getElementById("helpButton"),
+  panelFooter: document.querySelector(".panel-footer"),
+  contentScroll: document.querySelector(".content-scroll"),
+  settingsAccountView: document.getElementById("settingsAccountView"),
+  settingsBackButton: document.getElementById("settingsBackButton"),
+  extensionAccountSection: document.getElementById("extensionAccountSection"),
+  settingsProfileGroupTitle: document.getElementById(
+    "settingsProfileGroupTitle"
+  ),
+  settingsOrgGroupTitle: document.getElementById("settingsOrgGroupTitle"),
 };
 
 type ExtensionState = {
@@ -483,25 +614,33 @@ let jobStatusPoller: number | null = null;
 let jobPollInFlight = false;
 let lastCompletedJobsSignature = "";
 let lastChartJobsSignature = "";
+let crossSurfaceOrgRefreshInFlight = false;
+let shellChrome: ReturnType<typeof HoverLib.shell.initSurfaceShell> | null =
+  null;
+let extensionView: ExtensionView = "dashboard";
+let accountSettingsBound = false;
+let accountSettingsLayoutBound = false;
 
 // Supabase realtime state
 let supabaseClient: SupabaseClient | null = null;
-let jobsChannel: RealtimeChannel | null = null;
-let subscribeRetryCount = 0;
-let subscribeRetryTimeoutId: number | null = null;
-let fallbackPollingIntervalId: number | null = null;
-let lastRealtimeRefresh = 0;
-let throttleTimeoutId: number | null = null;
 let isRealtimeRefreshing = false;
-let cleanupHandlerRegistered = false;
+let jobsSubscriptionCleanup: (() => void) | null = null;
 
 function getStoredBaseUrl(): string {
+  const extensionWindow = window as ExtensionWindow;
+  const runtimeBaseUrl = String(
+    extensionWindow.HOVER_EXTENSION_CONFIG?.appOrigin || ""
+  ).trim();
+  if (runtimeBaseUrl) {
+    return runtimeBaseUrl.replace(/\/+$/, "");
+  }
+
   const storedBaseUrl = localStorage.getItem(API_BASE_STORAGE_KEY);
   if (!storedBaseUrl) {
     return DEFAULT_GNH_APP_ORIGIN;
   }
 
-  if (LEGACY_EXTENSION_APP_ORIGINS.has(storedBaseUrl)) {
+  if (/^https:\/\/hover-pr-\d+\.fly\.dev\/?$/i.test(storedBaseUrl)) {
     return DEFAULT_GNH_APP_ORIGIN;
   }
 
@@ -592,8 +731,111 @@ async function initSupabaseClient(): Promise<SupabaseClient | null> {
     access_token: state.token,
     refresh_token: "",
   });
+  (window as ExtensionWindow).HOVER_EXTENSION_SUPABASE_CLIENT = supabaseClient;
 
   return supabaseClient;
+}
+
+function pickUserDisplayName(
+  metadata: Record<string, unknown> | null | undefined
+): string {
+  const firstName = String(
+    metadata?.given_name || metadata?.first_name || ""
+  ).trim();
+  const lastName = String(
+    metadata?.family_name || metadata?.last_name || ""
+  ).trim();
+  const fullName = String(metadata?.full_name || metadata?.name || "").trim();
+  return fullName || [firstName, lastName].filter(Boolean).join(" ").trim();
+}
+
+function pickUserAvatarUrl(
+  user:
+    | {
+        user_metadata?: Record<string, unknown> | null;
+        identities?: Array<{
+          identity_data?: Record<string, unknown> | null;
+        } | null> | null;
+      }
+    | null
+    | undefined
+): string {
+  const metadata =
+    (user?.user_metadata as Record<string, unknown> | null | undefined) || null;
+  const directAvatar = String(
+    metadata?.avatar_url || metadata?.picture || metadata?.avatar || ""
+  ).trim();
+  if (directAvatar) {
+    return directAvatar;
+  }
+
+  const identityAvatar = user?.identities
+    ?.map((identity) =>
+      String(identity?.identity_data?.avatar_url || "").trim()
+    )
+    .find(Boolean);
+
+  return identityAvatar || "";
+}
+
+async function loadCurrentUserIdentity(): Promise<void> {
+  const client = await initSupabaseClient();
+  if (client?.auth?.getUser) {
+    try {
+      const result = await client.auth.getUser();
+      const user = result?.data?.user;
+      const metadata =
+        (user?.user_metadata as Record<string, unknown> | null | undefined) ||
+        null;
+
+      if (user?.email) {
+        state.userEmail = user.email;
+      }
+
+      const displayName = pickUserDisplayName(metadata);
+      if (displayName) {
+        state.userDisplayName = displayName;
+      }
+
+      const avatarUrl = pickUserAvatarUrl(user);
+      if (avatarUrl) {
+        state.userAvatarUrl = avatarUrl;
+      }
+    } catch (error) {
+      console.warn("Unable to load current user identity", error);
+    }
+  }
+
+  if (state.userEmail && state.userDisplayName) {
+    return;
+  }
+
+  try {
+    const profile = (await HoverLib.api.get("/v1/auth/profile")) as {
+      user?: {
+        email?: string | null;
+        first_name?: string | null;
+        last_name?: string | null;
+        full_name?: string | null;
+      };
+    };
+    const user = profile?.user;
+    if (user?.email) {
+      state.userEmail = user.email;
+    }
+    const displayName =
+      String(user?.full_name || "").trim() ||
+      [user?.first_name || "", user?.last_name || ""]
+        .map((value) => String(value).trim())
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+    if (displayName) {
+      state.userDisplayName = displayName;
+    }
+  } catch (error) {
+    console.warn("Unable to load profile identity fallback", error);
+  }
 }
 
 function asNode(element: Element | null): HTMLElement | null {
@@ -606,18 +848,6 @@ function asInput(element: Element | null): HTMLInputElement | null {
 
 function asSelect(element: Element | null): HTMLSelectElement | null {
   return element instanceof HTMLSelectElement ? element : null;
-}
-
-function getSiteDomainCandidates(): string[] {
-  const normalised = new Set(
-    state.siteDomainCandidates
-      .map((candidate) => normalizeDomain(candidate))
-      .filter(Boolean)
-  );
-  if (state.siteDomain) {
-    normalised.add(state.siteDomain);
-  }
-  return [...normalised];
 }
 
 function hide(el: HTMLElement | null): void {
@@ -639,15 +869,7 @@ function setText(node: Element | null, value: string): void {
 }
 
 function normalizeDomain(input: string): string {
-  const trimmed = input
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, "")
-    .replace(/^www\./, "");
-  if (!trimmed) {
-    return "";
-  }
-  return trimmed.split("/")[0] || trimmed;
+  return HoverLib.jobs.normaliseDomain(input);
 }
 
 function normalizeJobStatus(status: string): string {
@@ -661,38 +883,28 @@ function isActiveJobStatus(status: string): boolean {
 function pickLatestJobForCurrentSite(
   jobs: JobItem[] | undefined
 ): JobItem | null {
-  const candidates = getSiteDomainCandidates();
-  return (
-    jobs?.find((job) => {
-      const jobDomain = normalizeDomain(job.domains?.name || "");
-      return !candidates.length || candidates.includes(jobDomain);
-    }) || null
-  );
+  return (HoverLib.jobs.pickLatestJobByDomains(jobs || [], {
+    siteDomain: state.siteDomain,
+    siteDomainCandidates: state.siteDomainCandidates,
+  }) || null) as JobItem | null;
 }
 
 function buildCompletedJobsSignature(jobs: JobItem[] | undefined): string {
-  const completed = filterSiteJobs(jobs || [])
-    .filter((job) => !isActiveJobStatus(job.status))
-    .slice(0, 6);
-
-  return completed
-    .map(
-      (job) =>
-        `${job.id}:${job.status}:${job.total_tasks}:${job.completed_tasks}:${job.failed_tasks}:${job.skipped_tasks}:${job.completed_at || ""}`
-    )
-    .join("|");
+  return HoverLib.jobs.buildCompletedJobsSignature(
+    jobs || [],
+    {
+      siteDomain: state.siteDomain,
+      siteDomainCandidates: state.siteDomainCandidates,
+    },
+    isActiveJobStatus
+  );
 }
 
 function buildChartJobsSignature(jobs: JobItem[] | undefined): string {
-  const chartJobs = filterSiteJobs(jobs || [])
-    .filter((job) => normalizeJobStatus(job.status) === "completed")
-    .slice(0, 12);
-  return chartJobs
-    .map(
-      (job) =>
-        `${job.id}:${job.status}:${job.failed_tasks}:${job.skipped_tasks}:${job.completed_at || ""}:${job.total_tasks}`
-    )
-    .join("|");
+  return HoverLib.jobs.buildChartJobsSignature(jobs || [], {
+    siteDomain: state.siteDomain,
+    siteDomainCandidates: state.siteDomainCandidates,
+  });
 }
 
 function stopJobStatusPolling(): void {
@@ -703,10 +915,9 @@ function stopJobStatusPolling(): void {
 }
 
 function startJobStatusPolling(): void {
-  // When realtime is active, the realtime subscription + fallback polling
-  // handle all refreshes. Only start the legacy 6s poller if we have no
-  // realtime channel (e.g. Supabase config unavailable).
-  if (jobsChannel || fallbackPollingIntervalId) {
+  // When realtime is active, the shared subscription also owns fallback polling.
+  // Only start the legacy 6 s poller if we have no shared subscription.
+  if (jobsSubscriptionCleanup) {
     return;
   }
 
@@ -732,178 +943,77 @@ function startJobStatusPolling(): void {
 async function realtimeRefresh(): Promise<void> {
   if (isRealtimeRefreshing) return;
   isRealtimeRefreshing = true;
-  lastRealtimeRefresh = Date.now();
 
   try {
-    // Refresh both job state and usage stats, matching the dashboard pattern.
-    await Promise.all([refreshCurrentJob(), refreshUsage()]);
+    // Refresh both job state and organisation context so cross-surface org
+    // switches update quota, selected org, and the realtime subscription.
+    await Promise.all([refreshCurrentJob(), refreshOrganisationContext()]);
   } finally {
     isRealtimeRefreshing = false;
   }
 }
 
-async function refreshUsage(): Promise<void> {
+async function refreshOrganisationContext(): Promise<void> {
   if (!state.token) return;
 
   try {
-    const usageData = (await HoverLib.api.get("/v1/usage")) as UsageResponse;
-    state.usage = usageData.usage || null;
+    const previousOrganisationId = state.activeOrganisationId;
+    await loadUsageAndOrgs();
     renderUsage(state.usage);
+
+    if (state.activeOrganisationId !== previousOrganisationId) {
+      renderOrganisations();
+      if (supabaseClient) {
+        subscribeToJobUpdates();
+      }
+    }
   } catch (error) {
-    // Non-critical — keep existing usage displayed.
-    console.warn("Failed to refresh usage stats:", error);
-  }
-}
-
-function throttledRealtimeRefresh(): void {
-  // Receiving a real event proves realtime works — stop fallback polling.
-  clearFallbackPolling();
-
-  const now = Date.now();
-  const timeSinceLastRefresh = now - lastRealtimeRefresh;
-
-  if (timeSinceLastRefresh >= REALTIME_DEBOUNCE_MS && !isRealtimeRefreshing) {
-    void realtimeRefresh();
-    return;
-  }
-
-  // Schedule a refresh when the throttle window expires.
-  if (!throttleTimeoutId && !isRealtimeRefreshing) {
-    const delay = REALTIME_DEBOUNCE_MS - timeSinceLastRefresh;
-    throttleTimeoutId = window.setTimeout(
-      () => {
-        throttleTimeoutId = null;
-        if (!isRealtimeRefreshing) {
-          void realtimeRefresh();
-        }
-      },
-      Math.max(delay, 100)
-    );
-  }
-}
-
-function startFallbackPolling(): void {
-  if (fallbackPollingIntervalId) return;
-
-  fallbackPollingIntervalId = window.setInterval(() => {
-    void realtimeRefresh();
-  }, FALLBACK_POLLING_INTERVAL_MS);
-}
-
-function clearFallbackPolling(): void {
-  if (fallbackPollingIntervalId) {
-    window.clearInterval(fallbackPollingIntervalId);
-    fallbackPollingIntervalId = null;
+    // Non-critical — keep existing org/quota state displayed.
+    console.warn("Failed to refresh organisation context:", error);
   }
 }
 
 function cleanupRealtimeSubscription(): void {
-  if (subscribeRetryTimeoutId) {
-    window.clearTimeout(subscribeRetryTimeoutId);
-    subscribeRetryTimeoutId = null;
+  if (jobsSubscriptionCleanup) {
+    jobsSubscriptionCleanup();
+    jobsSubscriptionCleanup = null;
   }
-
-  if (throttleTimeoutId) {
-    window.clearTimeout(throttleTimeoutId);
-    throttleTimeoutId = null;
-  }
-
-  clearFallbackPolling();
-
-  if (jobsChannel && supabaseClient) {
-    void supabaseClient.removeChannel(jobsChannel);
-    jobsChannel = null;
-  }
-
-  subscribeRetryCount = 0;
-  cleanupHandlerRegistered = false;
 }
 
-async function subscribeToJobUpdates(): Promise<void> {
+function subscribeToJobUpdates(): void {
   const orgId = state.activeOrganisationId;
   if (!orgId || !supabaseClient) {
-    if (subscribeRetryCount < MAX_SUBSCRIBE_RETRIES) {
-      subscribeRetryCount++;
-      subscribeRetryTimeoutId = window.setTimeout(
-        () => void subscribeToJobUpdates(),
-        SUBSCRIBE_RETRY_INTERVAL_MS
-      );
-    } else {
-      console.warn("[Realtime] Max retries reached, enabling fallback polling");
-      startFallbackPolling();
-    }
     return;
   }
 
-  // Reset retry state on success.
-  subscribeRetryCount = 0;
-  subscribeRetryTimeoutId = null;
-
-  // Clean up existing subscription if any.
-  if (jobsChannel && supabaseClient) {
-    try {
-      await supabaseClient.removeChannel(jobsChannel);
-    } catch (_e) {
-      // Ignore removal errors.
-    }
-    jobsChannel = null;
-  }
-
-  // Register cleanup handler once.
-  if (!cleanupHandlerRegistered) {
-    window.addEventListener("beforeunload", cleanupRealtimeSubscription);
-    cleanupHandlerRegistered = true;
-  }
-
-  try {
-    const channel = supabaseClient
-      .channel(`jobs-changes:${orgId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "jobs",
-          filter: `organisation_id=eq.${orgId}`,
-        },
-        () => throttledRealtimeRefresh()
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "jobs",
-          filter: `organisation_id=eq.${orgId}`,
-        },
-        () => throttledRealtimeRefresh()
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "DELETE",
-          schema: "public",
-          table: "jobs",
-          filter: `organisation_id=eq.${orgId}`,
-        },
-        () => throttledRealtimeRefresh()
-      )
-      .subscribe((status, err) => {
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || err) {
-          console.warn(
-            "[Realtime] Connection issue, fallback polling will continue"
-          );
-        }
-        // Fallback polling stops only when we receive an actual realtime event.
-      });
-
-    // Start fallback polling immediately — cleared when a real event arrives.
-    startFallbackPolling();
-    jobsChannel = channel;
-  } catch (err) {
-    console.error("[Realtime] Failed to subscribe to jobs:", err);
-    startFallbackPolling();
-  }
+  // The shared subscription owns realtime fallback polling, so the older
+  // active-job interval must stop before we hand control across.
+  stopJobStatusPolling();
+  cleanupRealtimeSubscription();
+  jobsSubscriptionCleanup = HoverLib.jobs.subscribeToJobUpdates({
+    orgId,
+    onUpdate: () => {
+      void realtimeRefresh();
+    },
+    supabaseClient,
+    channelName: `jobs-changes:${orgId}`,
+    getFallbackInterval: () => FALLBACK_POLLING_INTERVAL_MS,
+    onSubscriptionIssue: (status, err) => {
+      if (
+        status === "CHANNEL_ERROR" ||
+        status === "TIMED_OUT" ||
+        status === "SUBSCRIBE_FAILED" ||
+        status === "MAX_RETRIES" ||
+        err
+      ) {
+        console.warn(
+          "[Realtime] Connection issue, fallback polling will continue",
+          status,
+          err
+        );
+      }
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -916,22 +1026,23 @@ async function refreshCurrentJob(): Promise<void> {
 
   try {
     jobPollInFlight = true;
-    const response = (await HoverLib.api.get(
-      "/v1/jobs?limit=50&include=stats"
-    )) as JobListResponse;
-    const latest = pickLatestJobForCurrentSite(response.jobs);
+    const jobs = (await HoverLib.jobs.fetchJobs({
+      limit: 50,
+      include: "stats",
+    })) as JobItem[];
+    const latest = pickLatestJobForCurrentSite(jobs);
     state.currentJob = latest;
     renderJobState(state.currentJob);
 
-    const completedSignature = buildCompletedJobsSignature(response.jobs);
+    const completedSignature = buildCompletedJobsSignature(jobs);
     if (completedSignature !== lastCompletedJobsSignature) {
-      renderRecentResults(response.jobs);
+      renderRecentResults(jobs);
       lastCompletedJobsSignature = completedSignature;
     }
 
-    const chartSignature = buildChartJobsSignature(response.jobs);
+    const chartSignature = buildChartJobsSignature(jobs);
     if (chartSignature !== lastChartJobsSignature) {
-      renderMiniChart(response.jobs);
+      renderMiniChart(jobs);
       lastChartJobsSignature = chartSignature;
     }
 
@@ -1125,17 +1236,163 @@ async function setExtensionSizeForAuthState(isAuthed: boolean): Promise<void> {
   }
 }
 
+async function setExtensionSizeForView(view: ExtensionView): Promise<void> {
+  try {
+    await webflow.setExtensionSize(
+      view === "settings-account"
+        ? ACCOUNT_SETTINGS_EXTENSION_SIZE
+        : AUTHENTICATED_EXTENSION_SIZE
+    );
+  } catch (error) {
+    console.warn("Unable to set extension size", error);
+  }
+}
+
 function renderAuthState(isAuthed: boolean): void {
   if (isAuthed) {
     hide(asNode(ui.unauthState));
     show(asNode(ui.authState));
-    void setExtensionSizeForAuthState(true);
+    void setExtensionSizeForView(extensionView);
     return;
   }
 
   show(asNode(ui.unauthState));
   hide(asNode(ui.authState));
   void setExtensionSizeForAuthState(false);
+}
+
+function renderView(): void {
+  const showSettingsAccount = extensionView === "settings-account";
+
+  if (showSettingsAccount) {
+    hide(asNode(ui.actionBar));
+    hide(asNode(ui.statusBlock));
+    hide(asNode(ui.contentScroll));
+    hide(asNode(ui.panelFooter));
+    show(asNode(ui.settingsAccountView));
+  } else {
+    show(asNode(ui.actionBar));
+    show(asNode(ui.statusBlock));
+    show(asNode(ui.contentScroll));
+    show(asNode(ui.panelFooter));
+    hide(asNode(ui.settingsAccountView));
+  }
+
+  if (state.token) {
+    void setExtensionSizeForView(extensionView);
+  }
+}
+
+function renderSettingsSidebar(path: string): void {
+  document
+    .querySelectorAll<HTMLElement>("[data-settings-path]")
+    .forEach((element) => {
+      const isActive = element.dataset.settingsPath === path;
+      element.classList.toggle("active", isActive);
+      if (isActive) {
+        element.setAttribute("aria-current", "page");
+      } else {
+        element.removeAttribute("aria-current");
+      }
+    });
+}
+
+function renderSettingsOrganisationGroupTitle(): void {
+  const heading = asNode(ui.settingsOrgGroupTitle);
+  if (!heading) {
+    return;
+  }
+  const activeOrg = state.organisations.find(
+    (organisation) => organisation.id === state.activeOrganisationId
+  );
+  heading.textContent = activeOrg?.name
+    ? `Manage ${activeOrg.name}`
+    : "Manage organisation";
+}
+
+function renderSettingsProfileGroupTitle(): void {
+  const heading = asNode(ui.settingsProfileGroupTitle);
+  if (!heading) {
+    return;
+  }
+
+  const firstName = asInput(
+    document.getElementById("settingsUserFirstNameInput")
+  )?.value.trim();
+  const lastName = asInput(
+    document.getElementById("settingsUserLastNameInput")
+  )?.value.trim();
+  const displayNameFromFields = [firstName, lastName].filter(Boolean).join(" ");
+  heading.textContent =
+    displayNameFromFields ||
+    state.userDisplayName ||
+    state.userEmail ||
+    "Profile";
+}
+
+function bindAccountSettingsLayout(): void {
+  if (accountSettingsLayoutBound) {
+    return;
+  }
+
+  document
+    .querySelectorAll<HTMLElement>("[data-settings-path]")
+    .forEach((element) => {
+      element.addEventListener("click", () => {
+        const path = element.dataset.settingsPath;
+        if (!path) {
+          return;
+        }
+        openSettingsPage(path);
+      });
+    });
+
+  accountSettingsLayoutBound = true;
+}
+
+async function openAccountSettingsView(): Promise<void> {
+  if (!state.token || !ui.extensionAccountSection) {
+    return;
+  }
+
+  extensionView = "settings-account";
+  renderSettingsSidebar(APP_ROUTES.account);
+  renderSettingsOrganisationGroupTitle();
+  bindAccountSettingsLayout();
+  renderView();
+
+  if (!accountSettingsBound) {
+    HoverLib.settings.account.setupAccountActions(ui.extensionAccountSection, {
+      onNameSaved: () => {
+        const firstName = asInput(
+          document.getElementById("settingsUserFirstNameInput")
+        )?.value.trim();
+        const lastName = asInput(
+          document.getElementById("settingsUserLastNameInput")
+        )?.value.trim();
+        const nextDisplayName = [firstName, lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        if (nextDisplayName) {
+          state.userDisplayName = nextDisplayName;
+          void updateAvatarFromState();
+        }
+        renderSettingsProfileGroupTitle();
+      },
+    });
+    accountSettingsBound = true;
+  }
+
+  await HoverLib.settings.account.loadAccountDetails(
+    ui.extensionAccountSection
+  );
+  renderSettingsProfileGroupTitle();
+}
+
+function openDashboardView(): void {
+  extensionView = "dashboard";
+  renderView();
 }
 
 // ---------------------------------------------------------------------------
@@ -1147,176 +1404,51 @@ function renderJobState(job: JobItem | null): void {
   const section = asNode(ui.jobSection);
   if (!job || !isActiveJobStatus(job.status)) {
     stopJobStatusPolling();
-    hide(section);
-    return;
   }
-
-  const hoverJobCard = (window as any).HoverJobCard;
-  const card: HTMLElement = hoverJobCard
-    ? hoverJobCard.createJobCard(job, { context: "extension" })
-    : buildResultCardFallback(job, false);
-
-  if (section) {
-    section.replaceChildren(card);
-    card.addEventListener("hover-job-card:view", (e: Event) =>
-      openSettingsPage((e as CustomEvent).detail.path)
-    );
-    card.addEventListener("hover-job-card:export", (e: Event) => {
-      void exportJob((e as CustomEvent).detail.jobId);
-    });
-    show(section);
-  }
-}
-
-function asCount(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return 0;
-  }
-  return Math.max(0, Math.floor(value));
-}
-
-function getIssueCounts(job: JobItem): {
-  brokenLinks: number;
-  verySlow: number;
-  slow: number;
-} {
-  const buckets = job.stats?.slow_page_buckets;
-  const statsBrokenLinks = asCount(job.stats?.total_broken_links);
-  const fallbackBrokenLinks = asCount(job.failed_tasks);
-
-  if (job.stats && buckets) {
-    const verySlow = asCount(buckets.over_10s) + asCount(buckets["5_to_10s"]);
-    const slow = asCount(buckets["3_to_5s"]);
-    return {
-      brokenLinks: Math.max(statsBrokenLinks, fallbackBrokenLinks),
-      verySlow,
-      slow,
-    };
-  }
-
-  return {
-    brokenLinks: fallbackBrokenLinks,
-    verySlow: 0,
-    slow: 0,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Recent results list (completed jobs only)
-// ---------------------------------------------------------------------------
-
-function filterSiteJobs(jobs: JobItem[]): JobItem[] {
-  const candidates = getSiteDomainCandidates();
-  return jobs.filter((job) => {
-    const jobDomain = normalizeDomain(job.domains?.name || "");
-    return !candidates.length || candidates.includes(jobDomain);
+  HoverLib.view.renderJobState({
+    jobSection: section,
+    job,
+    isActiveJobStatus,
+    context: "extension",
+    onViewJob: (path) => {
+      openSettingsPage(path);
+    },
+    onExportJob: (jobId) => {
+      void exportJob(jobId);
+    },
   });
 }
 
 function renderRecentResults(jobs: JobItem[]): void {
-  const latestContainer = ui.latestResultsList;
-  const recentContainer = ui.recentResultsList;
-  if (!latestContainer || !recentContainer) {
-    return;
-  }
-
-  while (latestContainer.firstChild) {
-    latestContainer.removeChild(latestContainer.firstChild);
-  }
-
-  while (recentContainer.firstChild) {
-    recentContainer.removeChild(recentContainer.firstChild);
-  }
-
-  const siteJobs = filterSiteJobs(jobs);
-
-  // All completed / non-active jobs go here
-  const completedJobs = siteJobs.filter(
-    (job) => !isActiveJobStatus(job.status)
-  );
-
-  // Show/hide no-job state based on whether there are ANY jobs
-  if (siteJobs.length === 0) {
-    show(asNode(ui.noJobState));
-  } else {
-    hide(asNode(ui.noJobState));
-  }
-
-  if (completedJobs.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "detail";
-    empty.textContent = "No completed runs yet.";
-    latestContainer.appendChild(empty);
-    return;
-  }
-
-  const groupedJobs = completedJobs.slice(0, 6);
-  const latestJob = groupedJobs[0] || null;
-  const recentJobs = groupedJobs.slice(1, 6);
-
-  const hoverJobCard = (window as any).HoverJobCard;
-
-  function makeCard(cardJob: JobItem, compact: boolean): HTMLElement {
-    const card: HTMLElement = hoverJobCard
-      ? hoverJobCard.createJobCard(cardJob, { context: "extension", compact })
-      : buildResultCardFallback(cardJob, compact);
-    card.addEventListener("hover-job-card:view", (e: Event) =>
-      openSettingsPage((e as CustomEvent).detail.path)
-    );
-    card.addEventListener("hover-job-card:export", (e: Event) => {
-      void exportJob((e as CustomEvent).detail.jobId);
-    });
-    return card;
-  }
-
-  if (latestJob) {
-    latestContainer.appendChild(makeCard(latestJob, false));
-  }
-
-  if (recentJobs.length > 0) {
-    for (const job of recentJobs) {
-      recentContainer.appendChild(makeCard(job, true));
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Result card fallback (used only if hover-job-card.js fails to load)
-// ---------------------------------------------------------------------------
-
-function buildResultCardFallback(job: JobItem, compact = false): HTMLElement {
-  // Minimal fallback used only if hover-job-card.js fails to load.
-  const card = document.createElement("div");
-  card.className = compact
-    ? "result-card result-card--complete result-card--compact"
-    : "result-card result-card--complete";
-  const label = document.createElement("p");
-  label.textContent = String(job.status || "unknown");
-  card.appendChild(label);
-  return card;
+  HoverLib.view.renderRecentResults({
+    latestResultsList: asNode(ui.latestResultsList),
+    recentResultsList: asNode(ui.recentResultsList),
+    noJobState: asNode(ui.noJobState),
+    jobs,
+    siteDomain: state.siteDomain,
+    siteDomainCandidates: state.siteDomainCandidates,
+    isActiveJobStatus,
+    context: "extension",
+    onViewJob: (path) => {
+      openSettingsPage(path);
+    },
+    onExportJob: (jobId) => {
+      void exportJob(jobId);
+    },
+    emptySiteMessage: "No runs yet for this site.",
+  });
 }
 // Job export
 // ---------------------------------------------------------------------------
 
 async function exportJob(jobId: string): Promise<void> {
   try {
-    const payload = (await HoverLib.api.get(
-      `/v1/jobs/${jobId}/export`
-    )) as JobExportPayload;
-
-    const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
-    const { keys, headers } = prepareExportColumns(payload.columns, tasks);
-
-    const csvRows = [headers.join(",")];
-    for (const task of tasks) {
-      const values = keys.map((key) => escapeCSVValue(task[key]));
-      csvRows.push(values.join(","));
+    const result = await HoverLib.exports.downloadJobExport(jobId, {
+      api: HoverLib.api,
+    });
+    if (result.empty) {
+      setStatus("Export unavailable", "No tasks to export.");
     }
-
-    const csvContent = csvRows.join("\n");
-    const filenameBase = sanitizeForFilename(payload.domain || `job-${jobId}`);
-    const filename = `${filenameBase}-hover-export.csv`;
-    triggerFileDownload(csvContent, "text/csv", filename);
   } catch (error) {
     setStatus(
       "Export failed",
@@ -1325,207 +1457,47 @@ async function exportJob(jobId: string): Promise<void> {
   }
 }
 
-function prepareExportColumns(
-  columns: ExportColumn[] | undefined,
-  tasks: Record<string, unknown>[]
-): { keys: string[]; headers: string[] } {
-  if (Array.isArray(columns) && columns.length > 0) {
-    return {
-      keys: columns.map((column) => column.key),
-      headers: columns.map((column) => column.label || column.key),
-    };
-  }
-
-  const keySet = new Set<string>();
-  for (const task of tasks) {
-    Object.keys(task || {}).forEach((key) => keySet.add(key));
-  }
-
-  const keys = [...keySet];
-  return { keys, headers: keys };
-}
-
-// CSV/file utilities — delegated to shared formatters via HoverLib bridge
-const escapeCSVValue = (value: unknown): string =>
-  HoverLib?.fmt?.escapeCSVValue?.(value) ?? String(value ?? "");
-
-function triggerFileDownload(
-  content: string,
-  mimeType: string,
-  filename: string
-): void {
-  if (HoverLib?.fmt?.triggerFileDownload) {
-    HoverLib.fmt.triggerFileDownload(content, mimeType, filename);
-  }
-}
-
-const sanitizeForFilename = (value: string): string =>
-  HoverLib?.fmt?.sanitiseForFilename?.(value) ?? value;
-
 // ---------------------------------------------------------------------------
 // Mini chart
 // ---------------------------------------------------------------------------
 
 function renderMiniChart(jobs: JobItem[]): void {
-  const container = ui.miniChart;
-  if (!container) {
-    return;
-  }
-
-  while (container.firstChild) {
-    container.removeChild(container.firstChild);
-  }
-
-  const completedJobs = filterSiteJobs(jobs)
-    .filter((job) => normalizeJobStatus(job.status) === "completed")
-    .slice(0, 12);
-
-  if (completedJobs.length === 0) {
-    for (const label of ui.chartScaleLabels || []) {
-      label.textContent = "0";
-    }
-    return;
-  }
-
-  const chartRows = completedJobs
-    .filter(
-      (job) =>
-        normalizeJobStatus(job.status) === "completed" && Boolean(job.stats)
-    )
-    .map((job) => {
-      const { brokenLinks, verySlow, slow } = getIssueCounts(job);
-      const errorCount = brokenLinks;
-      const okCount = verySlow + slow;
-      const totalPages = Math.max(0, job.total_tasks);
-      return {
-        job,
-        errorCount,
-        okCount,
-        issueTotal: errorCount + okCount,
-        totalPages,
-      };
-    })
-    .filter((row) => row.issueTotal > 0 && row.totalPages > 0)
-    .reverse();
-
-  if (chartRows.length === 0) {
-    for (const label of ui.chartScaleLabels || []) {
-      label.textContent = "0";
-    }
-    return;
-  }
-
-  const maxIssues = Math.max(...chartRows.map((row) => row.issueTotal), 1);
-
-  const tickTop = maxIssues;
-  const tickMid = Math.round(maxIssues * 0.5);
-  const tickQuarter = Math.round(maxIssues * 0.25);
-  const tickValues = [tickTop, tickMid, tickQuarter, 0];
-
-  (ui.chartScaleLabels || []).forEach((label, index) => {
-    const value = tickValues[index] ?? 0;
-    label.textContent = String(value);
+  HoverLib.view.renderMiniChart({
+    miniChart: asNode(ui.miniChart),
+    chartScaleLabels: ui.chartScaleLabels,
+    jobs,
+    siteDomain: state.siteDomain,
+    siteDomainCandidates: state.siteDomainCandidates,
+    onViewJob: (path) => {
+      openSettingsPage(path);
+    },
   });
-
-  const minSegmentHeightPercent = 2;
-
-  for (const row of chartRows) {
-    const job = row.job;
-    const bar = document.createElement("div");
-    bar.className = "chart-bar";
-    bar.role = "button";
-    bar.tabIndex = 0;
-    const dateStr = HoverLib.fmt.formatDateTime(
-      job.completed_at || job.created_at
-    );
-    bar.title = `${dateStr}\nStatus: Completed\nOK: ${row.okCount}\nError: ${row.errorCount}\nTotal pages: ${job.total_tasks.toLocaleString()}`;
-
-    const detailPath = `${APP_ROUTES.viewJob}/${encodeURIComponent(job.id)}`;
-    bar.addEventListener("click", () => {
-      openSettingsPage(detailPath);
-    });
-    bar.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        openSettingsPage(detailPath);
-      }
-    });
-
-    if (row.okCount > 0) {
-      const seg = document.createElement("div");
-      seg.className = "chart-bar--warning";
-      const okHeight = Math.max(
-        minSegmentHeightPercent,
-        Math.min((row.okCount / maxIssues) * 100, 100)
-      );
-      seg.style.height = `${okHeight}%`;
-      bar.appendChild(seg);
-    }
-
-    if (row.errorCount > 0) {
-      const seg = document.createElement("div");
-      seg.className = "chart-bar--danger";
-      const errorHeight = Math.max(
-        minSegmentHeightPercent,
-        Math.min((row.errorCount / maxIssues) * 100, 100)
-      );
-      seg.style.height = `${errorHeight}%`;
-      bar.appendChild(seg);
-    }
-
-    if (bar.children.length > 0) {
-      container.appendChild(bar);
-    }
-  }
 }
 
 function renderUsage(usage: UsageStats | null): void {
-  if (!usage) {
-    if (ui.planNameText) {
-      ui.planNameText.innerHTML = "<strong>Plan:</strong> \u2014";
-    }
-    setText(ui.planRemainingValue, "\u2014");
-    return;
-  }
-
-  const plan = usage.plan_display_name || usage.plan_name || "Plan";
-  const limit = usage.daily_limit.toLocaleString();
-
-  if (ui.planNameText) {
-    ui.planNameText.innerHTML = `<strong>Plan:</strong> <strong>${plan}</strong> (${limit} / day)`;
-  }
-
-  const remaining = usage.daily_remaining.toLocaleString();
-  setText(ui.planRemainingValue, `${remaining} remaining`);
+  HoverLib.view.renderUsage({
+    usage,
+    profilePlanText: ui.profilePlanText,
+    profileUsageText: ui.profileUsageText,
+  });
+  HoverLib.shell.renderProfileMenuSummary({
+    emailNode: ui.profileEmail,
+    organisationNode: ui.profileOrgName,
+    planNode: ui.profilePlanText,
+    usageNode: ui.profileUsageText,
+    email: state.userEmail || "",
+    organisationName: getActiveOrganisationName(),
+    usage,
+  });
 }
 
 function renderOrganisations() {
-  const select = asSelect(ui.orgSelect);
-  if (!select) {
-    return;
-  }
-
-  while (select.firstChild) {
-    select.removeChild(select.firstChild);
-  }
-
-  if (state.organisations.length === 0) {
-    const placeholder = document.createElement("option");
-    placeholder.textContent = "No organisations";
-    placeholder.value = "";
-    select.appendChild(placeholder);
-    select.disabled = true;
-    return;
-  }
-
-  select.disabled = false;
-  state.organisations.forEach((org) => {
-    const option = document.createElement("option");
-    option.value = org.id;
-    option.textContent = org.name;
-    option.selected = org.id === state.activeOrganisationId;
-    select.appendChild(option);
+  HoverLib.view.renderOrganisations({
+    select: asSelect(ui.orgSelect),
+    organisations: state.organisations,
+    activeOrganisationId: state.activeOrganisationId,
   });
+  renderSettingsOrganisationGroupTitle();
 }
 
 function renderWebflowStatus(isConnected: boolean) {
@@ -1538,20 +1510,12 @@ function renderWebflowStatus(isConnected: boolean) {
 }
 
 function renderScheduleState(): void {
-  const scheduleSelect = asSelect(ui.scheduleSelect);
-  if (!scheduleSelect) {
-    return;
-  }
-
-  if (!state.currentScheduler || !state.currentScheduler.is_enabled) {
-    scheduleSelect.value = SCHEDULE_PLACEHOLDER;
-    return;
-  }
-
-  const hours = String(state.currentScheduler.schedule_interval_hours);
-  if (SCHEDULE_OPTIONS.includes(hours as any)) {
-    scheduleSelect.value = hours;
-  }
+  HoverLib.view.renderScheduleState({
+    select: asSelect(ui.scheduleSelect),
+    currentScheduler: state.currentScheduler,
+    placeholder: SCHEDULE_PLACEHOLDER,
+    allowedValues: [...SCHEDULE_OPTIONS],
+  });
 }
 
 function buildAppUrl(path: string): string {
@@ -1583,7 +1547,6 @@ function setDisabledAll(disabled: boolean): void {
     ui.scheduleSelect,
     ui.orgSelect,
     ui.webflowPublishToggle,
-    ui.settingsButton,
   ];
 
   for (const control of controls) {
@@ -1637,18 +1600,19 @@ async function loadLatestJob(): Promise<void> {
   }
 
   try {
-    const response = (await HoverLib.api.get(
-      "/v1/jobs?limit=50&include=stats"
-    )) as JobListResponse;
+    const jobs = (await HoverLib.jobs.fetchJobs({
+      limit: 50,
+      include: "stats",
+    })) as JobItem[];
 
-    const latest = pickLatestJobForCurrentSite(response.jobs);
+    const latest = pickLatestJobForCurrentSite(jobs);
 
     state.currentJob = latest;
     renderJobState(state.currentJob);
-    renderRecentResults(response.jobs);
-    renderMiniChart(response.jobs);
-    lastCompletedJobsSignature = buildCompletedJobsSignature(response.jobs);
-    lastChartJobsSignature = buildChartJobsSignature(response.jobs);
+    renderRecentResults(jobs);
+    renderMiniChart(jobs);
+    lastCompletedJobsSignature = buildCompletedJobsSignature(jobs);
+    lastChartJobsSignature = buildChartJobsSignature(jobs);
     startJobStatusPolling();
   } catch (error) {
     state.currentJob = null;
@@ -1670,15 +1634,19 @@ async function loadUsageAndOrgs(): Promise<void> {
     return;
   }
 
-  const [orgData, usageData] = (await Promise.all([
-    HoverLib.api.get("/v1/organisations"),
-    HoverLib.api.get("/v1/usage"),
-  ])) as [OrganisationsResponse, UsageResponse];
+  const context = (await HoverLib.organisations.loadOrganisationContext({
+    api: HoverLib.api,
+  })) as {
+    organisations: Organisation[];
+    activeOrganisationId: string;
+    usage: UsageStats | null;
+  };
 
-  state.organisations = orgData.organisations || [];
+  state.organisations = context.organisations || [];
   state.activeOrganisationId =
-    orgData.active_organisation_id || state.activeOrganisationId;
-  state.usage = usageData.usage || null;
+    context.activeOrganisationId || state.activeOrganisationId;
+  state.usage = context.usage || null;
+  shellChrome?.setActiveOrganisation(state.activeOrganisationId);
 }
 
 async function loadCurrentSchedule(): Promise<void> {
@@ -1688,24 +1656,26 @@ async function loadCurrentSchedule(): Promise<void> {
     return;
   }
 
-  const siteDomain = normalizeDomain(state.siteDomain);
-  const schedulers = (await HoverLib.api.get("/v1/schedulers")) as Scheduler[];
-  const matching = schedulers.find(
-    (scheduler) => normalizeDomain(scheduler.domain) === siteDomain
-  );
-  state.currentScheduler = matching || null;
+  const matching = (await HoverLib.schedulers.findSchedulerByDomain(
+    state.siteDomain,
+    {
+      api: HoverLib.api,
+    }
+  )) as Scheduler | null;
+  state.currentScheduler = matching;
   renderScheduleState();
 }
 
 async function findConnectedWebflowSite(): Promise<WebflowSiteSetting | null> {
   if (!state.token || !state.siteDomain) {
+    state.webflowConnected = false;
+    state.webflowAutoPublishEnabled = false;
     renderWebflowStatus(false);
     return null;
   }
 
-  const connections = (await HoverLib.api.get(
-    "/v1/integrations/webflow"
-  )) as WebflowConnection[];
+  const connections =
+    (await HoverLib.webflow.listWebflowConnections()) as WebflowConnection[];
 
   if (!connections || connections.length === 0) {
     state.webflowConnected = false;
@@ -1716,41 +1686,12 @@ async function findConnectedWebflowSite(): Promise<WebflowSiteSetting | null> {
 
   state.webflowConnected = true;
 
-  const candidates = getSiteDomainCandidates();
-  let matched: WebflowSiteSetting | null = null;
-
-  for (const connection of connections) {
-    let page = 1;
-
-    while (true) {
-      const sites = (await HoverLib.api.get(
-        `/v1/integrations/webflow/${connection.id}/sites?page=${page}&limit=50`
-      )) as WebflowSitesResponse;
-
-      const candidate = sites.sites?.find((site) => {
-        const domain = normalizeDomain(site.primary_domain);
-        return candidates.includes(domain);
-      });
-
-      if (candidate) {
-        matched = {
-          ...candidate,
-          connection_id: connection.id,
-        };
-        break;
-      }
-
-      if (!sites.pagination?.has_next) {
-        break;
-      }
-
-      page += 1;
-    }
-
-    if (matched) {
-      break;
-    }
-  }
+  const matched = (await HoverLib.webflow.findMatchingWebflowSite({
+    api: HoverLib.api,
+    connections,
+    siteDomain: state.siteDomain,
+    siteDomainCandidates: state.siteDomainCandidates,
+  })) as WebflowSiteSetting | null;
 
   if (matched) {
     state.webflowAutoPublishEnabled = Boolean(matched.auto_publish_enabled);
@@ -1786,9 +1727,13 @@ async function setWebflowAutoPublish(enabled: boolean): Promise<void> {
   };
 
   try {
-    await HoverLib.api.put(
-      `/v1/integrations/webflow/sites/${siteSetting.webflow_site_id}/auto-publish`,
-      payload
+    await HoverLib.webflow.setWebflowSiteAutoPublish(
+      siteSetting.webflow_site_id,
+      {
+        api: HoverLib.api,
+        connectionId: payload.connection_id,
+        enabled: payload.enabled,
+      }
     );
   } catch (error) {
     // Revert on failure.
@@ -1819,8 +1764,9 @@ async function setJobSchedule(value: ScheduleOption): Promise<void> {
   const domain = state.siteDomain;
   if (value === "off") {
     if (state.currentScheduler) {
-      await HoverLib.api.put(`/v1/schedulers/${state.currentScheduler.id}`, {
-        is_enabled: false,
+      await HoverLib.schedulers.disableScheduler(state.currentScheduler.id, {
+        api: HoverLib.api,
+        expectedIsEnabled: state.currentScheduler.is_enabled,
       });
     }
     state.currentScheduler = null;
@@ -1832,16 +1778,23 @@ async function setJobSchedule(value: ScheduleOption): Promise<void> {
   const scheduleHours = Number(value);
 
   if (!state.currentScheduler) {
-    const created = (await HoverLib.api.post("/v1/schedulers", {
+    const created = (await HoverLib.schedulers.saveSchedulerForDomain(
       domain,
-      schedule_interval_hours: scheduleHours,
-    })) as Scheduler;
+      scheduleHours,
+      {
+        api: HoverLib.api,
+      }
+    )) as Scheduler;
     state.currentScheduler = created;
     setStatus("Schedule enabled.", "");
   } else {
-    const updated = (await HoverLib.api.put(
-      `/v1/schedulers/${state.currentScheduler.id}`,
-      { schedule_interval_hours: scheduleHours, is_enabled: true }
+    const updated = (await HoverLib.schedulers.saveSchedulerForDomain(
+      domain,
+      scheduleHours,
+      {
+        api: HoverLib.api,
+        currentScheduler: state.currentScheduler,
+      }
     )) as Scheduler;
     state.currentScheduler = updated;
     setStatus("Schedule updated.", "");
@@ -1888,7 +1841,9 @@ function handleAuthError(error: unknown): void {
     if (apiError.status === 401) {
       setStoredToken(null);
       cleanupRealtimeSubscription();
+      shellChrome?.setActiveOrganisation("");
       supabaseClient = null;
+      (window as ExtensionWindow).HOVER_EXTENSION_SUPABASE_CLIENT = null;
       renderAuthState(false);
       setStatus("Session expired. Sign in again.", "");
       return;
@@ -1929,7 +1884,9 @@ async function refreshDashboard(): Promise<void> {
       state.currentScheduler = null;
       stopJobStatusPolling();
       cleanupRealtimeSubscription();
+      shellChrome?.setActiveOrganisation("");
       supabaseClient = null;
+      (window as ExtensionWindow).HOVER_EXTENSION_SUPABASE_CLIENT = null;
       renderJobState(null);
       renderRecentResults([]);
       renderMiniChart([]);
@@ -1939,12 +1896,14 @@ async function refreshDashboard(): Promise<void> {
       renderOrganisations();
       renderScheduleState();
       renderWebflowStatus(false);
+      openDashboardView();
       return;
     }
 
     try {
       await Promise.all([
         loadUsageAndOrgs(),
+        loadCurrentUserIdentity(),
         loadLatestJob(),
         loadCurrentSchedule(),
         findConnectedWebflowSite(),
@@ -1952,6 +1911,15 @@ async function refreshDashboard(): Promise<void> {
       renderUsage(state.usage);
       renderOrganisations();
       void updateAvatarFromState();
+      HoverLib.shell.renderProfileMenuSummary({
+        emailNode: ui.profileEmail,
+        organisationNode: ui.profileOrgName,
+        planNode: ui.profilePlanText,
+        usageNode: ui.profileUsageText,
+        email: state.userEmail || "",
+        organisationName: getActiveOrganisationName(),
+        usage: state.usage,
+      });
 
       // Initialise Supabase realtime; fall back to legacy polling on failure.
       const client = await initSupabaseClient();
@@ -1968,6 +1936,29 @@ async function refreshDashboard(): Promise<void> {
   }
 }
 
+async function syncActiveOrganisationFromStorage(
+  nextOrganisationId: string | null
+): Promise<void> {
+  if (!state.token || !nextOrganisationId) {
+    return;
+  }
+
+  if (
+    crossSurfaceOrgRefreshInFlight ||
+    nextOrganisationId === state.activeOrganisationId
+  ) {
+    return;
+  }
+
+  crossSurfaceOrgRefreshInFlight = true;
+  try {
+    state.activeOrganisationId = nextOrganisationId;
+    await refreshDashboard();
+  } finally {
+    crossSurfaceOrgRefreshInFlight = false;
+  }
+}
+
 async function switchOrganisation(): Promise<void> {
   const select = asSelect(ui.orgSelect);
   if (!select || !select.value) {
@@ -1976,8 +1967,8 @@ async function switchOrganisation(): Promise<void> {
 
   setDisabledAll(true);
   try {
-    await HoverLib.api.post("/v1/organisations/switch", {
-      organisation_id: select.value,
+    await HoverLib.organisations.switchOrganisation(select.value, {
+      api: HoverLib.api,
     });
     state.activeOrganisationId = select.value;
     await refreshDashboard();
@@ -1987,11 +1978,46 @@ async function switchOrganisation(): Promise<void> {
 }
 
 function openSettingsPage(path: string): void {
+  if (path === APP_ROUTES.account) {
+    void openAccountSettingsView();
+    return;
+  }
+
   const targetUrl = buildAppUrl(path);
   const popup = window.open(targetUrl, "_blank", "noopener,noreferrer");
   if (!popup) {
     setStatus("Popup blocked. Allow popups and try again.", "");
   }
+}
+
+async function subscribeToNotificationsChannel(
+  organisationId: string,
+  onEvent: () => void
+): Promise<() => void> {
+  const client = await initSupabaseClient();
+  if (!organisationId || !client) {
+    return () => {};
+  }
+
+  const channel = client
+    .channel(`hover-notifications:${organisationId}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "notifications",
+        filter: `organisation_id=eq.${organisationId}`,
+      },
+      () => {
+        onEvent();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    client.removeChannel(channel).catch(() => {});
+  };
 }
 
 async function connectWebflow(): Promise<void> {
@@ -2002,7 +2028,7 @@ async function connectWebflow(): Promise<void> {
     }
   }
 
-  const response = (await HoverLib.api.post("/v1/integrations/webflow")) as {
+  const response = (await HoverLib.webflow.startWebflowConnection()) as {
     auth_url: string;
   };
 
@@ -2119,9 +2145,11 @@ function initEventHandlers(): void {
     }
   });
 
-  // Auth: settings gear
-  ui.settingsButton?.addEventListener("click", () => {
-    openSettingsPage(APP_ROUTES.changePlan);
+  ui.homeButton?.addEventListener("click", () => {
+    openDashboardView();
+  });
+  ui.settingsBackButton?.addEventListener("click", () => {
+    openDashboardView();
   });
 
   // Auth: org switcher
@@ -2182,9 +2210,18 @@ async function initialise(): Promise<void> {
   window.addEventListener("beforeunload", () => {
     stopJobStatusPolling();
     cleanupRealtimeSubscription();
+    shellChrome?.destroy();
+  });
+  window.addEventListener("storage", (event) => {
+    if (event.key !== ACTIVE_ORG_STORAGE_KEY) {
+      return;
+    }
+    void syncActiveOrganisationFromStorage(event.newValue);
   });
   try {
-    localStorage.setItem(API_BASE_STORAGE_KEY, state.apiBaseUrl);
+    if (!(window as ExtensionWindow).HOVER_EXTENSION_CONFIG?.appOrigin) {
+      localStorage.setItem(API_BASE_STORAGE_KEY, state.apiBaseUrl);
+    }
   } catch (_error) {
     // ignore
   }
@@ -2199,6 +2236,30 @@ async function initialise(): Promise<void> {
 
   initHoverJobCard();
   initEventHandlers();
+  shellChrome = HoverLib.shell.initSurfaceShell({
+    profileButton: ui.profileMenuButton as HTMLElement | null,
+    profileDropdown: ui.profileMenuDropdown as HTMLElement | null,
+    notificationsContainer: ui.notificationsContainer as HTMLElement | null,
+    notificationsButton: ui.notificationsButton as HTMLElement | null,
+    notificationsDropdown: ui.notificationsDropdown as HTMLElement | null,
+    notificationsList: ui.notificationsList as HTMLElement | null,
+    notificationsBadge: ui.notificationsBadge as HTMLElement | null,
+    markAllReadButton: ui.markAllReadButton as HTMLElement | null,
+    onNavigate: (path) => {
+      openSettingsPage(path);
+    },
+    fetchNotifications: (limit) =>
+      HoverLib.api.get(`/v1/notifications?limit=${limit}`),
+    markNotificationRead: async (id) => {
+      await HoverLib.api.post(`/v1/notifications/${id}/read`);
+    },
+    markAllNotificationsRead: async () => {
+      await HoverLib.api.post("/v1/notifications/read-all");
+    },
+    subscribeToNotifications: (orgId, onEvent) =>
+      subscribeToNotificationsChannel(orgId, onEvent),
+  });
+  renderView();
   await refreshDashboard();
   renderAuthState(Boolean(state.token));
 

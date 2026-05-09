@@ -1,42 +1,25 @@
 /**
- * pages/webflow-jobs.js — shared job-list logic for Webflow extension and dashboard
+ * pages/webflow-jobs.js — dashboard job helpers and table renderer
  *
- * This module provides the data-fetching, state management, and rendering
- * helpers for the job list surface. It is imported by both the Webflow
- * Designer extension panel and the main app dashboard.
- *
- * It does NOT own a page lifecycle — pages that use it (extension index.ts,
- * future dashboard.js) call init() and supply their own DOM containers.
- *
- * Prerequisites:
- *   - window.supabase initialised before calling subscribeToJobUpdates()
- *   - api-client.js / auth-session.js available via ES module imports
- *
- * Usage:
- *   import { fetchJobs, renderJobList, subscribeToJobUpdates } from "/app/pages/webflow-jobs.js";
- *
- *   const jobs = await fetchJobs({ limit: 10 });
- *   renderJobList(container, jobs);
- *   const unsubscribe = subscribeToJobUpdates(orgId, () => refresh());
+ * Shared fetching and realtime state lives in /app/lib/site-jobs.js.
+ * This page module keeps the dashboard-facing table renderer and a thin
+ * wrapper for the dashboard's adaptive polling cadence.
  */
 
-import { get } from "/app/lib/api-client.js";
+import {
+  fetchJobs as fetchSharedJobs,
+  subscribeToJobUpdates as subscribeToSharedJobUpdates,
+} from "/app/lib/site-jobs.js";
 import {
   formatRelativeTime,
   formatDuration,
   formatCount,
-  formatStatus,
-  statusCategory,
 } from "/app/lib/formatters.js";
 import { createStatusPill } from "/app/components/hover-status-pill.js";
 import { createDataTable } from "/app/components/hover-data-table.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const REALTIME_DEBOUNCE_MS = 250;
-const SUBSCRIBE_RETRY_INTERVAL_MS = 1000;
-const MAX_SUBSCRIBE_RETRIES = 15;
-// Match legacy gnh-auth-extension.js: 500 ms when jobs are active, 1 s when idle.
 const FALLBACK_POLLING_INTERVAL_ACTIVE_MS = 500;
 const FALLBACK_POLLING_INTERVAL_IDLE_MS = 1000;
 
@@ -49,13 +32,7 @@ const FALLBACK_POLLING_INTERVAL_IDLE_MS = 1000;
  * @returns {Promise<import("/app/lib/api-client.js").unknown[]>}
  */
 export async function fetchJobs(options = {}) {
-  const params = new URLSearchParams();
-  if (options.limit) params.set("limit", String(options.limit));
-  if (options.range) params.set("range", options.range);
-  if (options.include) params.set("include", options.include);
-  const qs = params.toString();
-  const res = await get(`/v1/jobs${qs ? `?${qs}` : ""}`);
-  return res?.jobs ?? [];
+  return fetchSharedJobs(options);
 }
 
 // ── Rendering ──────────────────────────────────────────────────────────────────
@@ -165,141 +142,12 @@ export function renderErrorState(container, message = "Failed to load jobs.") {
  * @returns {() => void} unsubscribe / cleanup function
  */
 export function subscribeToJobUpdates(orgId, onUpdate) {
-  let channel = null;
-  let retryCount = 0;
-  let retryTimer = null;
-  let fallbackTimer = null;
-  let lastUpdate = 0;
-  let debounceTimer = null;
-  let unsubscribed = false;
-
-  function throttledUpdate() {
-    const now = Date.now();
-    if (now - lastUpdate >= REALTIME_DEBOUNCE_MS) {
-      lastUpdate = now;
-      clearFallback();
-      onUpdate();
-      return;
-    }
-    if (!debounceTimer) {
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null;
-        if (unsubscribed) return;
-        lastUpdate = Date.now();
-        clearFallback();
-        onUpdate();
-      }, REALTIME_DEBOUNCE_MS);
-    }
-  }
-
-  // Adaptive interval: 500 ms while jobs are active, 1 s when idle.
-  // Matches the legacy gnh-auth-extension.js dual-interval behaviour.
-  function getFallbackInterval() {
-    return window.dataBinder?.hasRealtimeActiveJobs
-      ? FALLBACK_POLLING_INTERVAL_ACTIVE_MS
-      : FALLBACK_POLLING_INTERVAL_IDLE_MS;
-  }
-
-  let fallbackIntervalMs = null;
-
-  function startFallback() {
-    const nextMs = getFallbackInterval();
-    if (fallbackTimer && fallbackIntervalMs === nextMs) return;
-    if (fallbackTimer) {
-      clearInterval(fallbackTimer);
-    }
-    fallbackIntervalMs = nextMs;
-    fallbackTimer = setInterval(onUpdate, fallbackIntervalMs);
-  }
-
-  function clearFallback() {
-    if (fallbackTimer) {
-      clearInterval(fallbackTimer);
-      fallbackTimer = null;
-      fallbackIntervalMs = null;
-    }
-  }
-
-  function cleanup() {
-    unsubscribed = true;
-    if (retryTimer) {
-      clearTimeout(retryTimer);
-      retryTimer = null;
-    }
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
-    clearFallback();
-    if (channel && window.supabase) {
-      window.supabase.removeChannel(channel).catch(() => {});
-      channel = null;
-    }
-  }
-
-  function subscribe() {
-    if (unsubscribed) return;
-    if (!orgId || !window.supabase?.channel) {
-      if (retryCount < MAX_SUBSCRIBE_RETRIES) {
-        retryCount++;
-        retryTimer = setTimeout(subscribe, SUBSCRIBE_RETRY_INTERVAL_MS);
-      } else {
-        startFallback();
-      }
-      return;
-    }
-
-    retryCount = 0;
-
-    try {
-      channel = window.supabase
-        .channel(`hover-jobs:${orgId}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "jobs",
-            filter: `organisation_id=eq.${orgId}`,
-          },
-          throttledUpdate
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "jobs",
-            filter: `organisation_id=eq.${orgId}`,
-          },
-          throttledUpdate
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "DELETE",
-            schema: "public",
-            table: "jobs",
-            filter: `organisation_id=eq.${orgId}`,
-          },
-          throttledUpdate
-        )
-        .subscribe((status, err) => {
-          if (
-            (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || err) &&
-            !unsubscribed
-          ) {
-            startFallback();
-          }
-        });
-
-      // Start fallback immediately; clearFallback() stops it on first real event
-      startFallback();
-    } catch {
-      startFallback();
-    }
-  }
-
-  subscribe();
-  return cleanup;
+  return subscribeToSharedJobUpdates({
+    orgId,
+    onUpdate,
+    getFallbackInterval: () =>
+      window.dataBinder?.hasRealtimeActiveJobs
+        ? FALLBACK_POLLING_INTERVAL_ACTIVE_MS
+        : FALLBACK_POLLING_INTERVAL_IDLE_MS,
+  });
 }

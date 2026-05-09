@@ -51,7 +51,9 @@ Expected behaviour:
 ## Popup auth bridge
 
 - Extension opens `GET /extension-auth.html` on GNH app domain.
-- Popup reuses shared auth modal (`/js/auth.js`) for sign in/sign up.
-- On success, popup posts `{ source: "gnh-extension-auth", accessToken }` back
-  to extension with origin and state checks.
-- Popup only accepts trusted target origins (`*.webflow-ext.com` or localhost).
+- Popup page is bootstrapped by `web/static/app/pages/webflow-login.js`, which
+  still reuses the shared auth modal and OAuth helpers from `/js/auth.js`.
+- On success, popup posts
+  `{ source: "gnh-extension-auth", state, extensionState, accessToken }` back to
+  the extension.
+- The extension validates popup origin and state before accepting the token.

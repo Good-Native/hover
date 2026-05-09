@@ -9,7 +9,7 @@
     "sync-shared": "node scripts/sync-shared.js",
     "sync-components": "npm run sync-shared",
     "build": "npm run sync-shared && npm run compile && npm exec -- webflow extension bundle --skip-update-check",
-    "dev": "npm run sync-shared && concurrently -r \"npm exec -- webflow extension serve --skip-update-check\" \"npm run compile -- --watch --preserveWatchOutput\"",
+    "dev": "node scripts/dev.js",
     "lint": "eslint --no-config-lookup -c eslint.config.mjs \"src/**/*.ts\"",
     "format:check": "prettier --check \"./**/*.{ts,json,md,html,css,yml,yaml}\"",
     "format:write": "prettier --write \"./**/*.{ts,json,md,html,css,yml,yaml}\""

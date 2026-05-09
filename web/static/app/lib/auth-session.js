@@ -37,13 +37,15 @@
  * @returns {import("@supabase/supabase-js").SupabaseAuthClient}
  */
 function authClient() {
-  if (!window.supabase?.auth) {
+  const auth =
+    window.HOVER_EXTENSION_SUPABASE_CLIENT?.auth || window.supabase?.auth;
+  if (!auth) {
     throw new Error(
       "auth-session: window.supabase is not initialised. " +
         "Ensure the Supabase SDK script and /config.js load before this module runs."
     );
   }
-  return window.supabase.auth;
+  return auth;
 }
 
 /**

@@ -5,7 +5,13 @@
  * navigation to schedule job history. Surface-agnostic.
  */
 
-import { get, put, del } from "/app/lib/api-client.js";
+import {
+  deleteScheduler,
+  disableScheduler,
+  getScheduler,
+  listSchedulers,
+  updateScheduler,
+} from "/app/lib/scheduler-api.js";
 import { showToast as _showToast } from "/app/components/hover-toast.js";
 
 function toast(variant, message) {
@@ -50,7 +56,7 @@ export async function loadSchedules(container) {
   if (!template) return;
 
   try {
-    const schedules = await get("/v1/schedulers");
+    const schedules = await listSchedulers();
 
     // Remove existing rendered cards (keep the template)
     const existing = schedulesList.querySelectorAll(
@@ -119,16 +125,19 @@ export async function loadSchedules(container) {
 
 async function toggleSchedule(schedulerId, container) {
   try {
-    const scheduler = await get(
-      `/v1/schedulers/${encodeURIComponent(schedulerId)}`
-    );
-    const updated = await put(
-      `/v1/schedulers/${encodeURIComponent(schedulerId)}`,
-      {
-        is_enabled: !scheduler.is_enabled,
-        expected_is_enabled: scheduler.is_enabled,
-      }
-    );
+    const scheduler = await getScheduler(schedulerId);
+    if (!scheduler) {
+      throw new Error("Schedule not found");
+    }
+
+    const updated = scheduler.is_enabled
+      ? await disableScheduler(schedulerId, {
+          expectedIsEnabled: scheduler.is_enabled,
+        })
+      : await updateScheduler(schedulerId, {
+          is_enabled: true,
+          expected_is_enabled: scheduler.is_enabled,
+        });
     toast("success", `Schedule ${updated.is_enabled ? "enabled" : "disabled"}`);
     await loadSchedules(container);
   } catch (err) {
@@ -141,7 +150,7 @@ async function deleteSchedule(schedulerId, container) {
   if (!confirm("Are you sure you want to delete this schedule?")) return;
 
   try {
-    await del(`/v1/schedulers/${encodeURIComponent(schedulerId)}`);
+    await deleteScheduler(schedulerId);
     toast("success", "Schedule deleted");
     await loadSchedules(container);
   } catch (err) {

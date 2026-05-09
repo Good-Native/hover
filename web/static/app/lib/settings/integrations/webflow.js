@@ -5,12 +5,14 @@
  * Flow: Connect -> OAuth -> Return to settings -> Configure sites
  */
 
-import { post } from "/app/lib/api-client.js";
-import { getAccessToken } from "/app/lib/auth-session.js";
 import {
-  fetchWithTimeout,
-  normaliseIntegrationError,
-} from "/app/lib/integration-http.js";
+  disconnectWebflowConnection,
+  listWebflowConnections,
+  listWebflowSites,
+  setWebflowSiteAutoPublish,
+  setWebflowSiteSchedule,
+  startWebflowConnection,
+} from "/app/lib/webflow-sites.js";
 import { showToast as _showToast } from "/app/components/hover-toast.js";
 import { formatRelativeDate } from "/app/lib/settings/integrations/shared.js";
 
@@ -90,23 +92,7 @@ function handleWebflowAction(action, element) {
 
 export async function loadWebflowConnections() {
   try {
-    const token = await getAccessToken();
-    if (!token) return;
-
-    const response = await fetchWithTimeout(
-      "/v1/integrations/webflow",
-      { headers: { Authorization: `Bearer ${token}` } },
-      { module: "webflow", action: "list" }
-    );
-    if (!response.ok) {
-      const text = await response.text();
-      throw normaliseIntegrationError(response, text, {
-        module: "webflow",
-        action: "list",
-      });
-    }
-    const json = await response.json();
-    const connections = json?.data || json || [];
+    const connections = await listWebflowConnections();
 
     const connectionsList = document.getElementById("webflowConnectionsList");
     const emptyState = document.getElementById("webflowEmptyState");
@@ -171,7 +157,7 @@ export async function loadWebflowConnections() {
 
 async function connectWebflow() {
   try {
-    const response = await post("/v1/integrations/webflow");
+    const response = await startWebflowConnection();
     if (response?.auth_url) {
       window.location.href = response.auth_url;
     } else {
@@ -192,27 +178,7 @@ async function disconnectWebflow(connectionId) {
     return;
 
   try {
-    const token = await getAccessToken();
-    if (!token) {
-      toast("error", "Not authenticated. Please sign in.");
-      return;
-    }
-
-    const response = await fetchWithTimeout(
-      `/v1/integrations/webflow/${encodeURIComponent(connectionId)}`,
-      { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
-      { module: "webflow", action: "disconnect", connectionId }
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw normaliseIntegrationError(response, text, {
-        module: "webflow",
-        action: "disconnect",
-        connectionId,
-      });
-    }
-
+    await disconnectWebflowConnection(connectionId);
     toast("success", "Webflow disconnected");
     loadWebflowConnections();
   } catch (error) {
@@ -233,31 +199,7 @@ export async function loadWebflowSites(connectionId, page = 1) {
   if (emptyEl) emptyEl.style.display = "none";
 
   try {
-    const token = await getAccessToken();
-    if (!token) {
-      toast("error", "Not authenticated. Please sign in.");
-      sitesState.loading = false;
-      if (loadingEl) loadingEl.style.display = "none";
-      return;
-    }
-
-    const response = await fetchWithTimeout(
-      `/v1/integrations/webflow/${encodeURIComponent(connectionId)}/sites`,
-      { headers: { Authorization: `Bearer ${token}` } },
-      { module: "webflow", action: "list-sites", connectionId }
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw normaliseIntegrationError(response, text, {
-        module: "webflow",
-        action: "list-sites",
-        connectionId,
-      });
-    }
-
-    const json = await response.json();
-    const data = json?.data ?? { sites: [] };
+    const data = await listWebflowSites(connectionId, { page });
     const sites = Array.isArray(data.sites) ? data.sites : [];
 
     sitesState.connectionId = connectionId;
@@ -361,38 +303,10 @@ async function handleScheduleChange(event) {
   select.disabled = true;
 
   try {
-    const token = await getAccessToken();
-    if (!token) {
-      toast("error", "Not authenticated. Please sign in.");
-      select.disabled = false;
-      return;
-    }
-
-    const response = await fetchWithTimeout(
-      `/v1/integrations/webflow/sites/${encodeURIComponent(siteId)}/schedule`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          connection_id: connectionId,
-          schedule_interval_hours: interval,
-        }),
-      },
-      { module: "webflow", action: "update-schedule", siteId, connectionId }
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw normaliseIntegrationError(response, text, {
-        module: "webflow",
-        action: "update-schedule",
-        siteId,
-        connectionId,
-      });
-    }
+    await setWebflowSiteSchedule(siteId, {
+      connectionId,
+      scheduleIntervalHours: interval,
+    });
 
     const site = sitesState.sites.find((s) => s.webflow_site_id === siteId);
     if (site) site.schedule_interval_hours = interval;
@@ -400,7 +314,10 @@ async function handleScheduleChange(event) {
     if (interval) {
       let autoPublishEnabled = false;
       try {
-        await setAutoPublish(siteId, connectionId, true);
+        await setWebflowSiteAutoPublish(siteId, {
+          connectionId,
+          enabled: true,
+        });
         autoPublishEnabled = true;
       } catch (err) {
         console.error("Failed to auto-enable run-on-publish:", err);
@@ -429,34 +346,6 @@ async function handleScheduleChange(event) {
   }
 }
 
-async function setAutoPublish(siteId, connectionId, enabled) {
-  const token = await getAccessToken();
-  if (!token) throw new Error("Not authenticated. Please sign in.");
-
-  const response = await fetchWithTimeout(
-    `/v1/integrations/webflow/sites/${encodeURIComponent(siteId)}/auto-publish`,
-    {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ connection_id: connectionId, enabled }),
-    },
-    { module: "webflow", action: "set-auto-publish", siteId, connectionId }
-  );
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw normaliseIntegrationError(response, text, {
-      module: "webflow",
-      action: "set-auto-publish",
-      siteId,
-      connectionId,
-    });
-  }
-}
-
 async function handleAutoPublishToggle(event) {
   const toggle = event.target;
   const siteId = toggle.dataset.siteId;
@@ -475,7 +364,10 @@ async function handleAutoPublishToggle(event) {
   }
 
   try {
-    await setAutoPublish(siteId, connectionId, enabled);
+    await setWebflowSiteAutoPublish(siteId, {
+      connectionId,
+      enabled,
+    });
 
     const site = sitesState.sites.find((s) => s.webflow_site_id === siteId);
     if (site) site.auto_publish_enabled = enabled;

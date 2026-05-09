@@ -28,7 +28,49 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Added
+
+- shared frontend modules for extension and dashboard reuse:
+  `web/static/app/lib/site-jobs.js`, `web/static/app/lib/webflow-sites.js`,
+  `web/static/app/lib/organisation-api.js`,
+  `web/static/app/lib/scheduler-api.js`, `web/static/app/lib/site-view.js`,
+  `web/static/app/lib/job-export.js`, and `web/static/app/lib/shell-nav.js`
+- shared shell styling in `web/static/app/styles/shell.css`, now loaded by both
+  `/dashboard` and the Webflow Designer extension
+- a native module-based `/extension-auth` flow in
+  `web/static/app/pages/webflow-login.js`, replacing the old extension popup
+  dependency on the legacy auth bundle
+- the first native in-extension settings section, `Account`, using shared
+  account settings logic inside the extension shell rather than loading the app
+  page
+
+### Changed
+
+- centralised Webflow extension job fetching, site scoping, and realtime
+  fallback logic into `web/static/app/lib/site-jobs.js`, reducing duplication
+  between the app layer and extension bridge runtime
+- rewired the Webflow Designer extension to consume shared jobs, Webflow site,
+  organisation, scheduler, export, shell, and site-view helpers through the
+  bridge and sync pipeline
+- moved `/dashboard` onto the extension-style shell and shared site-focused
+  module runtime, replacing the older dashboard-specific shell/layout
+- aligned extension reuse docs with the current migration state, including the
+  shared shell layer, module-native popup auth, and remaining native-extension
+  settings/detail work
+
+### Fixed
+
+- extension popup auth return-to-extension handling, including stable popup
+  callback state restoration and module-native sign-in handoff
+- cross-surface organisation sync so dashboard org changes refresh extension
+  organisation context instead of leaving stale labels behind
+- extension account settings loading and profile save support, including CORS
+  `PATCH` allowance for `/v1/auth/profile`
+- avatar rendering regressions across dashboard and extension, including Google
+  avatar CSP allowance, shared avatar DOM rendering, and extension avatar source
+  alignment with dashboard identity data
+- required shared module/style sync failures now stop the extension build
+  instead of silently shipping missing bridge dependencies
 
 ## Full changelog history
 
