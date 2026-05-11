@@ -29,13 +29,15 @@ const (
 // DetectWAF inspects a response and reports whether it carries a
 // fingerprint of a known bot-protection layer. The function is pure: no
 // I/O, safe for table-driven tests. It is intentionally conservative on
-// 200 responses — only blocking status codes (typically 403 or 202)
+// 200 responses — only non-200 responses (typically 403, 429, or 202)
 // combined with corroborating fingerprints trigger a verdict, so a
 // healthy site that happens to use Cloudflare for caching does not get
 // flagged.
 //
 // Fingerprints (issue #365 row 1 + comment 4334238167):
 //   - Cloudflare: cf-mitigated header set on a non-200 response
+//     (includes 429 managed-challenge responses where CF returns the
+//     challenge HTML wrapped as Too Many Requests)
 //   - Imperva: body contains _Incapsula_Resource
 //   - DataDome: Server header equals DataDome
 //   - Akamai: Server header AkamaiGHost OR akaalb_/_abck/bm_sz cookie OR
@@ -50,7 +52,12 @@ func DetectWAF(statusCode int, headers http.Header, bodySample []byte) WAFDetect
 
 	blocking := isBlockingStatus(statusCode)
 
-	if v := strings.TrimSpace(headers.Get("Cf-Mitigated")); v != "" && blocking {
+	// cf-mitigated indicates Cloudflare took bot-management action
+	// (challenge, block, jschallenge, managed_challenge). It is only
+	// emitted on responses where CF intervened, so a non-empty value on
+	// any non-200 status is a reliable signal — including 429 challenges
+	// against datacentre egress IPs.
+	if v := strings.TrimSpace(headers.Get("Cf-Mitigated")); v != "" && statusCode != http.StatusOK {
 		return WAFDetection{
 			Blocked: true,
 			Vendor:  WAFVendorCloudflare,
@@ -149,6 +156,8 @@ func statusLabel(code int) string {
 		return "403"
 	case http.StatusAccepted:
 		return "202"
+	case http.StatusTooManyRequests:
+		return "429"
 	default:
 		return http.StatusText(code)
 	}

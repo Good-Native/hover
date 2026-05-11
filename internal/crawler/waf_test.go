@@ -123,6 +123,24 @@ func TestDetectWAF(t *testing.T) {
 			reasonPrefix: "cf-mitigated",
 		},
 		{
+			// Real failure mode observed against Shopify storefronts when
+			// CF "Super Bot Fight Mode" is enabled: CF returns 429 with
+			// the challenge HTML in the body and Cf-Mitigated: challenge.
+			// Prior to this case, isBlockingStatus only allowed 403/202
+			// so the detector silently no-op'd and jobs burnt 3 retries
+			// before failing with a misleading "Too Many Requests" error.
+			name:   "cloudflare — cf-mitigated challenge on 429",
+			status: http.StatusTooManyRequests,
+			headers: http.Header{
+				"Cf-Mitigated": []string{"challenge"},
+				"Server":       []string{"cloudflare"},
+			},
+			body:         []byte(strings.Repeat("x", 9000)), // CF challenge page is ~9KB
+			wantBlocked:  true,
+			wantVendor:   WAFVendorCloudflare,
+			reasonPrefix: "cf-mitigated header present on 429",
+		},
+		{
 			name:   "cloudflare — cf-mitigated alone on 200 must NOT trip (caching path)",
 			status: http.StatusOK,
 			headers: http.Header{
