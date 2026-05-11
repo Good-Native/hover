@@ -28,7 +28,15 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Fixed
+
+- WAF detection now recognises Cloudflare managed challenges served as HTTP 429
+  with `Cf-Mitigated: challenge`. Previously the verdict was gated behind status
+  403 or 202 only, so CF challenge responses (observed against CF-fronted
+  Shopify storefronts with Super Bot Fight Mode enabled) were misclassified as
+  plain "Too Many Requests" and jobs burnt three retries before failing with a
+  misleading error. Jobs now fail fast and stamp `domains.waf_blocked = true`
+  with `waf_vendor = cloudflare`.
 
 ## Full changelog history
 
