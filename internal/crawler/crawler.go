@@ -223,7 +223,6 @@ func buildRequestAttemptDiagnostics(
 type Crawler struct {
 	config      *Config
 	colly       *colly.Collector
-	id          string
 	metricsMap  *sync.Map
 	aia         *aiaTransport
 	probeClient *http.Client // Shared to avoid per-call transport leaks.
@@ -291,23 +290,13 @@ func (t *tracingRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 	return t.transport.RoundTrip(req)
 }
 
-func New(config *Config, id ...string) *Crawler {
+func New(config *Config) *Crawler {
 	if config == nil {
 		config = DefaultConfig()
 	}
 
-	crawlerID := ""
-	if len(id) > 0 {
-		crawlerID = id[0]
-	}
-
-	userAgent := config.UserAgent
-	if crawlerID != "" {
-		userAgent = fmt.Sprintf("%s Worker-%s", config.UserAgent, crawlerID)
-	}
-
 	c := colly.NewCollector(
-		colly.UserAgent(userAgent),
+		colly.UserAgent(config.UserAgent),
 		colly.MaxDepth(1),
 		colly.Async(true),
 		colly.AllowURLRevisit(),
@@ -373,7 +362,6 @@ func New(config *Config, id ...string) *Crawler {
 	return &Crawler{
 		config:     config,
 		colly:      c,
-		id:         crawlerID,
 		metricsMap: metricsMap,
 		aia:        aiaRT,
 		probeClient: &http.Client{
