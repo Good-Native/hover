@@ -28,7 +28,16 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Fixed
+
+- App, worker, and analysis binaries no longer `Fatal` on the first Redis `PING`
+  failure at startup. The ping is now wrapped in a bounded retry loop (30 s
+  total, 3 s per attempt, capped exponential backoff) so the binary rides out
+  the Upstash-on-Fly cold-start window that briefly closes connections with EOF
+  on freshly-provisioned review apps. Production behaviour is unchanged — a
+  healthy Redis still succeeds on the first attempt and persistent
+  misconfiguration still fails fast. Resolves the recurring EOF burst on every
+  PR preview deploy (Sentry: HOVER-JX, HOVER-MD, HOVER-JZ).
 
 ## Full changelog history
 
