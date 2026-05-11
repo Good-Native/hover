@@ -44,6 +44,7 @@ func (s *stubJobManager) MarkJobRunning(context.Context, string) error          
 func (s *stubJobManager) GetRobotsRules(context.Context, string) (*crawler.RobotsRules, error) {
 	return nil, nil
 }
+func (s *stubJobManager) UpdateDomainAdaptiveDelay(context.Context, string, int) error { return nil }
 
 // TestMaybeTripFromOutcome_AsyncDispatch verifies the stream worker
 // hot path isn't held up by BlockJob's terminal-state DB write. We

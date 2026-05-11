@@ -226,6 +226,28 @@ func (d *Dispatcher) dispatchJob(ctx context.Context, jobID string, now time.Tim
 		d.clearStuck(jobID)
 
 		domain := entry.Host
+
+		// Per-domain inflight cap derived from the learned adaptive delay:
+		// a 20-wide burst against a CF-fronted Shopify domain learning a
+		// 2s adaptive delay does no useful work and elevates the egress
+		// reputation score (collateral CF challenges on adjacent stores
+		// observed 2026-05-11). The total is summed across every job
+		// hitting the same host — a per-job slot would let N concurrent
+		// jobs each consume the cap and defeat the burst guard. Skip
+		// cheaply before consuming the gate.
+		domainCap, err := d.pacer.EffectiveCap(ctx, domain)
+		if err != nil {
+			brokerLog.Warn("effective cap lookup failed", "error", err, "domain", domain)
+		} else if domainCap > 0 {
+			inflight, err := d.pacer.GetDomainInflight(ctx, domain)
+			if err != nil {
+				brokerLog.Warn("inflight lookup failed", "error", err, "domain", domain)
+			} else if inflight >= int64(domainCap) {
+				observability.RecordBrokerPacerPushback(ctx, domain, "domain_cap")
+				continue
+			}
+		}
+
 		paceResult, err := d.pacer.TryAcquire(ctx, domain)
 		if err != nil {
 			brokerLog.Warn("pacer check failed", "error", err, "domain", domain)

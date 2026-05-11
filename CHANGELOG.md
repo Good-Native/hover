@@ -32,6 +32,23 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.10] – 2026-05-11
+
+### Changed
+
+- Pacer's per-domain adaptive delay is now durable:
+  `domains.adaptive_delay_seconds` is read on every job-info cache miss and
+  reseeded into Redis, and the learned value is written back from the pacer's
+  success/rate-limit path (debounced per domain at five-minute intervals). The
+  startup `FlushAdaptiveDelays` is now opt-in via
+  `GNH_PACER_FLUSH_ON_START=true` for incident recovery; default behaviour
+  preserves the learned rate across worker restarts.
+- Dispatcher now caps per-domain inflight tasks at
+  `ceil(GNH_PACER_EST_RESPONSE_MS / adaptive_delay_ms)` (default response
+  estimate 1500ms). Above the cap, additional entries skip dispatch without
+  consuming the gate, preventing the burst-then-collapse pattern that elevates
+  egress IP reputation on CF-fronted domains.
+
 ## [0.34.9] – 2026-05-11
 
 ### Fixed

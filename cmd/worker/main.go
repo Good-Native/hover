@@ -128,10 +128,22 @@ func main() {
 	pacer := broker.NewDomainPacer(redisClient, pacerCfg)
 	counters := broker.NewRunningCounters(redisClient)
 
-	// Adaptive-delay state lives in Redis with 24h TTL; without this flush a
-	// brief 429 burst can throttle a domain for a full day after upstream
-	// recovers. Disable via GNH_PACER_FLUSH_ON_START=false.
-	if strings.TrimSpace(os.Getenv("GNH_PACER_FLUSH_ON_START")) != "false" {
+	// Adaptive delay is now durable in domains.adaptive_delay_seconds and
+	// reseeded into Redis on every job-info cache miss. The startup flush
+	// is opt-in for incident recovery only: enable via
+	// GNH_PACER_FLUSH_ON_START=<truthy> to wipe Redis state and rebuild
+	// from Postgres. Default off so the learned rate survives worker
+	// restarts.
+	flushOnStart := false
+	if raw := strings.TrimSpace(os.Getenv("GNH_PACER_FLUSH_ON_START")); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			workerLog.Warn("invalid GNH_PACER_FLUSH_ON_START; expected boolean", "value", raw)
+		} else {
+			flushOnStart = parsed
+		}
+	}
+	if flushOnStart {
 		flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		deleted, err := pacer.FlushAdaptiveDelays(flushCtx)
 		flushCancel()
