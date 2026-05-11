@@ -28,7 +28,11 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Changed
+
+- Crawler user agent is now always exactly `config.UserAgent`. Dropped the dead
+  ` Worker-<id>` suffix branch in `crawler.New` along with the unused variadic
+  ID parameter and struct field.
 
 ## Full changelog history
 
