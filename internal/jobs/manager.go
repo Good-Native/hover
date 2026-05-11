@@ -409,10 +409,10 @@ func (jm *JobManager) GetRobotsRules(ctx context.Context, domain string) (*crawl
 		return nil, nil
 	}
 
-	// util.NormaliseDomain strips scheme/www/trailing slash but does not
-	// lowercase, so do that here to collapse case-variant inputs onto
-	// one cache entry.
-	key := strings.ToLower(util.NormaliseDomain(domain))
+	// Lowercase first: util.NormaliseDomain uses case-sensitive
+	// TrimPrefix for the scheme/www strips, so an upper-case "HTTPS://"
+	// would otherwise survive and split the cache.
+	key := util.NormaliseDomain(strings.ToLower(domain))
 	now := time.Now()
 
 	jm.robotsMutex.RLock()
@@ -427,26 +427,37 @@ func (jm *JobManager) GetRobotsRules(ctx context.Context, domain string) (*crawl
 		err   error
 	}
 	val, _, _ := jm.robotsGroup.Do(key, func() (any, error) {
-		result, fetchErr := jm.crawler.DiscoverSitemapsAndRobots(ctx, domain)
+		// Fetch with the canonical key so the request and the cache
+		// entry agree on the origin string. Without this, a scheme- or
+		// case-variant input would fetch under the raw form while the
+		// failure outcome got stored against the normalised key.
+		result, fetchErr := jm.crawler.DiscoverSitemapsAndRobots(ctx, key)
 		out := robotsResult{}
 		if fetchErr != nil {
-			out.err = fmt.Errorf("jobs: fetch robots for %s: %w", domain, fetchErr)
+			out.err = fmt.Errorf("jobs: fetch robots for %s: %w", key, fetchErr)
 		} else if result != nil {
 			out.rules = result.RobotsRules
 		}
 
-		ttl := jm.robotsTTLPos
-		if out.err != nil {
-			ttl = jm.robotsTTLNeg
-		}
+		// Don't negative-cache caller-side cancellations: one timed-out
+		// caller would otherwise poison the shared cache for everyone
+		// else for `robotsTTLNeg`.
+		transient := out.err != nil && (errors.Is(fetchErr, context.Canceled) ||
+			errors.Is(fetchErr, context.DeadlineExceeded))
 
-		jm.robotsMutex.Lock()
-		jm.robotsCache[key] = robotsCacheEntry{
-			rules:     out.rules,
-			err:       out.err,
-			expiresAt: time.Now().Add(ttl),
+		if !transient {
+			ttl := jm.robotsTTLPos
+			if out.err != nil {
+				ttl = jm.robotsTTLNeg
+			}
+			jm.robotsMutex.Lock()
+			jm.robotsCache[key] = robotsCacheEntry{
+				rules:     out.rules,
+				err:       out.err,
+				expiresAt: time.Now().Add(ttl),
+			}
+			jm.robotsMutex.Unlock()
 		}
-		jm.robotsMutex.Unlock()
 
 		// singleflight.Do returns the inner error to all sharers; return
 		// nil here and propagate err via the typed payload so a context

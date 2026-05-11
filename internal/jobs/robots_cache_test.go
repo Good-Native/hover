@@ -195,6 +195,52 @@ func TestGetRobotsRules_CollapsesConcurrentMisses(t *testing.T) {
 	}
 }
 
+func TestGetRobotsRules_DoesNotCacheContextCancellation(t *testing.T) {
+	var attempts atomic.Int32
+	stub := &stubRobotsCrawler{
+		discoverFn: func(_ context.Context, _ string) (*crawler.SitemapDiscoveryResult, error) {
+			if attempts.Add(1) == 1 {
+				return nil, context.Canceled
+			}
+			return &crawler.SitemapDiscoveryResult{RobotsRules: &crawler.RobotsRules{}}, nil
+		},
+	}
+	jm := newJobManagerWithCrawler(stub)
+	jm.robotsTTLNeg = time.Hour // would normally suppress a refetch
+
+	// First call surfaces the cancellation error but must NOT cache it.
+	if _, err := jm.GetRobotsRules(context.Background(), "cancel.com"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected wrapped context.Canceled, got %v", err)
+	}
+
+	// Second call must refetch and succeed — a transient cancel cannot
+	// poison the shared cache.
+	if _, err := jm.GetRobotsRules(context.Background(), "cancel.com"); err != nil {
+		t.Fatalf("expected recovery on refetch, got %v", err)
+	}
+	if c := stub.calls.Load(); c != 2 {
+		t.Fatalf("expected 2 origin fetches when cancellation is not cached, got %d", c)
+	}
+}
+
+func TestGetRobotsRules_FetchesUnderCanonicalDomain(t *testing.T) {
+	var seen string
+	stub := &stubRobotsCrawler{
+		discoverFn: func(_ context.Context, domain string) (*crawler.SitemapDiscoveryResult, error) {
+			seen = domain
+			return &crawler.SitemapDiscoveryResult{RobotsRules: &crawler.RobotsRules{}}, nil
+		},
+	}
+	jm := newJobManagerWithCrawler(stub)
+
+	if _, err := jm.GetRobotsRules(context.Background(), "HTTPS://www.Example.COM/"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if seen != "example.com" {
+		t.Fatalf("origin fetch must use the canonical key; got %q", seen)
+	}
+}
+
 // Compile-time guard that the stub satisfies CrawlerInterface; if a method
 // is added to the interface, this assertion breaks at build rather than
 // at test time.
