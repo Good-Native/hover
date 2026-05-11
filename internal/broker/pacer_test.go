@@ -116,9 +116,11 @@ func TestDomainPacer_Release_AdaptiveDelay(t *testing.T) {
 	require.NoError(t, pacer.IncrementInflight(ctx, "test.com", "j1"))
 
 	// Two successes should reduce the adaptive delay.
-	require.NoError(t, pacer.Release(ctx, "test.com", "j1", true, false))
+	_, err := pacer.Release(ctx, "test.com", "j1", true, false)
+	require.NoError(t, err)
 	require.NoError(t, pacer.IncrementInflight(ctx, "test.com", "j1"))
-	require.NoError(t, pacer.Release(ctx, "test.com", "j1", true, false))
+	_, err = pacer.Release(ctx, "test.com", "j1", true, false)
+	require.NoError(t, err)
 
 	key := DomainConfigKey("test.com")
 	adaptive, err := client.rdb.HGet(ctx, key, "adaptive_delay_ms").Result()
@@ -127,7 +129,8 @@ func TestDomainPacer_Release_AdaptiveDelay(t *testing.T) {
 
 	// A rate-limit error should increase it.
 	require.NoError(t, pacer.IncrementInflight(ctx, "test.com", "j1"))
-	require.NoError(t, pacer.Release(ctx, "test.com", "j1", false, true))
+	_, err = pacer.Release(ctx, "test.com", "j1", false, true)
+	require.NoError(t, err)
 
 	adaptive, err = client.rdb.HGet(ctx, key, "adaptive_delay_ms").Result()
 	require.NoError(t, err)
@@ -171,4 +174,66 @@ func TestDomainPacer_FlushAdaptiveDelays_Empty(t *testing.T) {
 	deleted, err := pacer.FlushAdaptiveDelays(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 0, deleted)
+}
+
+func TestDomainPacer_Release_ReturnsAdaptiveDelay(t *testing.T) {
+	client := newTestClient(t)
+	cfg := DefaultPacerConfig()
+	cfg.SuccessThreshold = 1
+	cfg.DelayStepMS = 100
+	cfg.DelayStepDownMS = 100
+	cfg.MaxDelayMS = 60000
+	pacer := NewDomainPacer(client, cfg)
+	ctx := context.Background()
+
+	require.NoError(t, pacer.Seed(ctx, "test.com", 50, 500, 50))
+
+	// Rate-limit increases the delay; Release returns the new value.
+	require.NoError(t, pacer.IncrementInflight(ctx, "test.com", "j1"))
+	got, err := pacer.Release(ctx, "test.com", "j1", false, true)
+	require.NoError(t, err)
+	assert.Equal(t, 600, got, "rate-limited release should return adaptive_delay_ms + step")
+
+	// Success when streak threshold met reduces the delay.
+	require.NoError(t, pacer.IncrementInflight(ctx, "test.com", "j1"))
+	got, err = pacer.Release(ctx, "test.com", "j1", true, false)
+	require.NoError(t, err)
+	assert.Equal(t, 500, got, "successful release at threshold should step adaptive_delay down")
+
+	// Neither success nor rate-limited: Release returns -1 (no observation).
+	require.NoError(t, pacer.IncrementInflight(ctx, "test.com", "j1"))
+	got, err = pacer.Release(ctx, "test.com", "j1", false, false)
+	require.NoError(t, err)
+	assert.Equal(t, -1, got)
+}
+
+func TestDomainPacer_EffectiveCap(t *testing.T) {
+	client := newTestClient(t)
+	cfg := DefaultPacerConfig()
+	cfg.EstResponseMS = 1500
+	pacer := NewDomainPacer(client, cfg)
+	ctx := context.Background()
+
+	// No config: cap disabled (0).
+	c, err := pacer.EffectiveCap(ctx, "unseeded.com")
+	require.NoError(t, err)
+	assert.Equal(t, 0, c)
+
+	// adaptive_delay_ms == 0: cap disabled.
+	require.NoError(t, pacer.Seed(ctx, "fast.com", 50, 0, 50))
+	c, err = pacer.EffectiveCap(ctx, "fast.com")
+	require.NoError(t, err)
+	assert.Equal(t, 0, c)
+
+	// adaptive_delay_ms == 500: ceil(1500 / 500) = 3.
+	require.NoError(t, pacer.Seed(ctx, "moderate.com", 50, 500, 50))
+	c, err = pacer.EffectiveCap(ctx, "moderate.com")
+	require.NoError(t, err)
+	assert.Equal(t, 3, c)
+
+	// adaptive_delay_ms == 2000: ceil(1500 / 2000) -> floor of 1.
+	require.NoError(t, pacer.Seed(ctx, "slow.com", 50, 2000, 50))
+	c, err = pacer.EffectiveCap(ctx, "slow.com")
+	require.NoError(t, err)
+	assert.Equal(t, 1, c)
 }

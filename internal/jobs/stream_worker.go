@@ -109,6 +109,8 @@ type StreamWorkerPool struct {
 	jobInfoMutex sync.RWMutex
 	jobInfoGroup singleflight.Group
 
+	adaptiveWriteback *adaptiveDelayWriteback
+
 	activeJobs   []string
 	activeJobsMu sync.RWMutex
 
@@ -149,7 +151,7 @@ func linkDiscoveryMaxInflight() int {
 }
 
 func NewStreamWorkerPool(deps StreamWorkerDeps, opts StreamWorkerOpts) *StreamWorkerPool {
-	return &StreamWorkerPool{
+	pool := &StreamWorkerPool{
 		consumer:         deps.Consumer,
 		scheduler:        deps.Scheduler,
 		counters:         deps.Counters,
@@ -164,6 +166,10 @@ func NewStreamWorkerPool(deps StreamWorkerDeps, opts StreamWorkerOpts) *StreamWo
 		jobInfoCache:     make(map[string]*cachedJobInfo),
 		linkDiscoverySem: make(chan struct{}, linkDiscoveryMaxInflight()),
 	}
+	if deps.JobManager != nil {
+		pool.adaptiveWriteback = newAdaptiveDelayWriteback(deps.JobManager)
+	}
+	return pool
 }
 
 // Start launches consumer goroutines and the reclaim loop.
@@ -374,9 +380,11 @@ func (swp *StreamWorkerPool) handleOutcome(ctx context.Context, msg broker.Strea
 		}
 	}
 
-	if err := swp.pacer.Release(ctx, domain, msg.JobID, outcome.Success, outcome.RateLimited); err != nil {
+	newDelayMS, err := swp.pacer.Release(ctx, domain, msg.JobID, outcome.Success, outcome.RateLimited)
+	if err != nil {
 		jobsLog.Warn("pacer release failed", "error", err, "domain", domain)
 	}
+	swp.adaptiveWriteback.Observe(ctx, domain, newDelayMS)
 
 	// Hand the payload to the persister BEFORE QueueTaskUpdate — the
 	// batch manager mutates the row in place. Enqueue is non-blocking
@@ -533,7 +541,7 @@ func (swp *StreamWorkerPool) reclaimStaleMessages(ctx context.Context) {
 			if _, err := swp.counters.Decrement(ctx, jobID); err != nil {
 				jobsLog.Warn("counter decrement on dead-letter failed", "error", err)
 			}
-			if err := swp.pacer.Release(ctx, msg.Host, jobID, false, false); err != nil {
+			if _, err := swp.pacer.Release(ctx, msg.Host, jobID, false, false); err != nil {
 				jobsLog.Warn("pacer release on dead-letter failed", "error", err, "domain", msg.Host)
 			}
 
@@ -739,6 +747,20 @@ func (swp *StreamWorkerPool) fetchJobInfo(ctx context.Context, jobID string) (*J
 	}
 	if adaptiveFloor.Valid {
 		info.AdaptiveDelayFloor = int(adaptiveFloor.Int64)
+	}
+
+	// Seed the pacer from the durable Postgres value so a new worker /
+	// freshly flushed Redis doesn't relearn the domain's rate limit from
+	// scratch. HSETNX inside Seed preserves any live state, so re-seeding
+	// on every job-info cache miss is safe and cheap.
+	if swp.pacer != nil {
+		baseDelayMS := info.CrawlDelay * 1000
+		adaptiveDelayMS := info.AdaptiveDelay * 1000
+		floorMS := info.AdaptiveDelayFloor * 1000
+		if seedErr := swp.pacer.Seed(ctx, info.DomainName, baseDelayMS, adaptiveDelayMS, floorMS); seedErr != nil {
+			jobsLog.Warn("pacer seed from postgres failed, continuing",
+				"error", seedErr, "domain", info.DomainName)
+		}
 	}
 
 	// Without robots rules, link discovery would let every URL through

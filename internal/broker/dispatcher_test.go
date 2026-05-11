@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -239,6 +240,36 @@ func TestDispatcher_DomainPacing_ReschedulesWhenGated(t *testing.T) {
 	// Sanity: dispatched entry's member is gone; rescheduled entry's member is unchanged.
 	_ = e1
 	_ = e2
+}
+
+// A domain whose learned adaptive_delay implies useful-concurrency=1
+// should saturate after the first dispatched task; subsequent entries
+// in the same tick must be skipped without consuming the gate. This is
+// the burst-prevention path that stops a 20-wide opening volley from
+// elevating the egress CF reputation score.
+func TestDispatcher_DomainCap_SaturatesAtUsefulConcurrency(t *testing.T) {
+	lister := &staticJobLister{ids: []string{"job-cap"}}
+	conc := &staticConcurrency{can: true}
+	d, s, pacer, _, _, _ := newDispatcherRig(t, lister, conc)
+	ctx := context.Background()
+
+	// adaptive_delay 5s with estResponseMS 1500 -> cap=1.
+	require.NoError(t, pacer.Seed(ctx, "capped.com", 0, 5000, 0))
+
+	now := time.Now()
+	for i := 0; i < 5; i++ {
+		seedEntry(t, s, "job-cap", fmt.Sprintf("t%d", i), "capped.com", now)
+	}
+
+	n, err := d.dispatchJob(ctx, "job-cap", now)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n, "domain cap should hold dispatch to one under high adaptive delay")
+
+	// Four remain in the ZSET, due now (not paced/rescheduled — domain
+	// cap skips before the gate is touched).
+	remaining, err := s.DueItems(ctx, "job-cap", now, 10)
+	require.NoError(t, err)
+	assert.Len(t, remaining, 4, "remaining entries must stay at their original run_at")
 }
 
 // --- Malformed ZSET entry cleanup --------------------------------------

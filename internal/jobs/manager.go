@@ -54,6 +54,10 @@ type JobManagerInterface interface {
 
 	// Returns nil rules (not error) when crawler is unavailable; callers treat that as "no restriction".
 	GetRobotsRules(ctx context.Context, domain string) (*crawler.RobotsRules, error)
+
+	// UpdateDomainAdaptiveDelay persists the pacer's learned per-domain
+	// delay (seconds). Callers debounce — this is a blind UPDATE.
+	UpdateDomainAdaptiveDelay(ctx context.Context, domain string, adaptiveDelaySeconds int) error
 }
 
 // Nil callback means legacy DB-queue mode (no external broker scheduling).
@@ -1300,6 +1304,24 @@ func (jm *JobManager) updateDomainCrawlDelay(ctx context.Context, domain string,
 	} else {
 		jobsLog.Info("Updated domain with crawl delay from robots.txt", "domain", domain, "crawl_delay", crawlDelay)
 	}
+}
+
+// UpdateDomainAdaptiveDelay persists the pacer's learned per-domain delay
+// (in seconds) so that the next worker restart can seed Redis from
+// Postgres rather than relearning from a 429 burst. Callers are expected
+// to debounce — this is a blind UPDATE.
+func (jm *JobManager) UpdateDomainAdaptiveDelay(ctx context.Context, domain string, adaptiveDelaySeconds int) error {
+	if adaptiveDelaySeconds < 0 {
+		return nil
+	}
+	return jm.dbQueue.Execute(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			UPDATE domains
+			SET adaptive_delay_seconds = $1
+			WHERE name = $2
+		`, adaptiveDelaySeconds, domain)
+		return err
+	})
 }
 
 func (jm *JobManager) IsJobComplete(job *Job) bool {
