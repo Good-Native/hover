@@ -94,7 +94,19 @@ func pingWithRetry(ctx context.Context, total, perAttempt time.Duration, ping fu
 
 	var lastErr error
 	for {
-		attemptCtx, cancel := context.WithTimeout(ctx, perAttempt)
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			if lastErr != nil {
+				return lastErr
+			}
+			return context.DeadlineExceeded
+		}
+
+		attemptTimeout := perAttempt
+		if attemptTimeout > remaining {
+			attemptTimeout = remaining
+		}
+		attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
 		err := ping(attemptCtx)
 		cancel()
 		if err == nil {
@@ -105,14 +117,19 @@ func pingWithRetry(ctx context.Context, total, perAttempt time.Duration, ping fu
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if !time.Now().Add(backoff).Before(deadline) {
+
+		sleep := backoff
+		if remaining := time.Until(deadline); sleep > remaining {
+			sleep = remaining
+		}
+		if sleep <= 0 {
 			return lastErr
 		}
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(backoff):
+		case <-time.After(sleep):
 		}
 
 		backoff *= 2

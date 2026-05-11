@@ -53,6 +53,21 @@ func TestPingWithRetry(t *testing.T) {
 			func(context.Context) error { return errors.New("boom") })
 		require.ErrorIs(t, err, context.Canceled)
 	})
+
+	// Guards against a regression where perAttempt > total let the
+	// final attempt run past the overall budget. The ping function
+	// blocks until its per-attempt context expires, so without the
+	// clamp the call would take perAttempt rather than total.
+	t.Run("clamps attempt timeout to remaining budget", func(t *testing.T) {
+		start := time.Now()
+		err := pingWithRetry(context.Background(), 80*time.Millisecond, time.Second,
+			func(ctx context.Context) error {
+				<-ctx.Done()
+				return ctx.Err()
+			})
+		require.Error(t, err)
+		assert.LessOrEqual(t, time.Since(start), 250*time.Millisecond)
+	})
 }
 
 // TestClient_ClearAll seeds every prefix the broker owns plus an
