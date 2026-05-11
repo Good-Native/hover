@@ -22,8 +22,7 @@ type recordingPersister struct {
 }
 
 func (p *recordingPersister) UpdateDomainAdaptiveDelay(_ context.Context, domain string, seconds int) error {
-	if p.failNext.Load() {
-		p.failNext.Store(false)
+	if p.failNext.Swap(false) {
 		return errors.New("simulated write error")
 	}
 	p.mu.Lock()
@@ -61,14 +60,30 @@ func waitForCalls(t *testing.T, p *recordingPersister, want int) {
 	t.Fatalf("expected at least %d persister calls, got %d", want, len(p.snapshot()))
 }
 
+// assertCallCountStable polls the persister for `window` and fails if the
+// observed call count ever exceeds `want`. Catches late writes that a
+// single Sleep+assert would miss.
+func assertCallCountStable(t *testing.T, p *recordingPersister, want int, window time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(window)
+	for time.Now().Before(deadline) {
+		if got := len(p.snapshot()); got > want {
+			t.Fatalf("expected at most %d persister calls during %s window, got %d", want, window, got)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := len(p.snapshot()); got != want {
+		t.Fatalf("expected exactly %d persister calls after %s, got %d", want, window, got)
+	}
+}
+
 func TestAdaptiveDelayWriteback_NegativeIsNoop(t *testing.T) {
 	p := &recordingPersister{}
 	w := newAdaptiveDelayWriteback(p)
 
 	w.Observe(context.Background(), "noop.com", -1)
-	time.Sleep(50 * time.Millisecond)
 
-	assert.Empty(t, p.snapshot(), "negative newDelayMS must not trigger a write")
+	assertCallCountStable(t, p, 0, 50*time.Millisecond)
 }
 
 func TestAdaptiveDelayWriteback_FirstObservationPersists(t *testing.T) {
@@ -110,9 +125,8 @@ func TestAdaptiveDelayWriteback_DebouncesWithinWindow(t *testing.T) {
 	// Same value, then a moved value — both must be suppressed by the window.
 	w.Observe(ctx, "debounce.com", 1000)
 	w.Observe(ctx, "debounce.com", 5000)
-	time.Sleep(100 * time.Millisecond)
 
-	assert.Len(t, p.snapshot(), 1, "second observation inside window must not write")
+	assertCallCountStable(t, p, 1, 100*time.Millisecond)
 }
 
 func TestAdaptiveDelayWriteback_UnchangedValueSkipsWrite(t *testing.T) {
@@ -125,9 +139,8 @@ func TestAdaptiveDelayWriteback_UnchangedValueSkipsWrite(t *testing.T) {
 	waitForCalls(t, p, 1)
 
 	w.Observe(ctx, "still.com", 2000)
-	time.Sleep(50 * time.Millisecond)
 
-	assert.Len(t, p.snapshot(), 1, "unchanged seconds value must not produce a second write")
+	assertCallCountStable(t, p, 1, 50*time.Millisecond)
 }
 
 func TestAdaptiveDelayWriteback_FailureClearsInFlight(t *testing.T) {
