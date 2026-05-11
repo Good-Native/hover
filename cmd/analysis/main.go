@@ -95,7 +95,7 @@ func main() {
 		analysisLog.Fatal("failed to create Redis client", "error", err)
 	}
 	defer redisClient.Close()
-	if err := redisClient.Ping(context.Background()); err != nil {
+	if err := redisClient.PingWithRetry(context.Background(), 30*time.Second, 3*time.Second); err != nil {
 		analysisLog.Fatal("failed to ping Redis", "error", err)
 	}
 	analysisLog.Info("connected to Redis")

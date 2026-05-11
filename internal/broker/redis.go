@@ -77,6 +77,51 @@ func (c *Client) Ping(ctx context.Context) error {
 	return c.rdb.Ping(ctx).Err()
 }
 
+// PingWithRetry retries Ping with capped exponential backoff until the
+// total budget elapses. Each attempt uses its own perAttempt timeout so
+// a hung server can't stall the loop. Returns nil on first success or
+// the last error if the budget is exhausted. Exists because Upstash-on-Fly
+// review apps occasionally close the first PING with EOF during cold
+// start, which used to Fatal the binary on boot (see HOVER-JX/MD/JZ).
+func (c *Client) PingWithRetry(ctx context.Context, total, perAttempt time.Duration) error {
+	return pingWithRetry(ctx, total, perAttempt, c.Ping)
+}
+
+func pingWithRetry(ctx context.Context, total, perAttempt time.Duration, ping func(context.Context) error) error {
+	deadline := time.Now().Add(total)
+	backoff := 100 * time.Millisecond
+	const maxBackoff = 2 * time.Second
+
+	var lastErr error
+	for {
+		attemptCtx, cancel := context.WithTimeout(ctx, perAttempt)
+		err := ping(attemptCtx)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !time.Now().Add(backoff).Before(deadline) {
+			return lastErr
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+	}
+}
+
 func (c *Client) Close() error {
 	return c.rdb.Close()
 }

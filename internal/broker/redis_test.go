@@ -2,13 +2,58 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestPingWithRetry covers the helper that wraps Ping with a bounded
+// retry loop. It uses a stub ping function so the test stays
+// hermetic and fast — no miniredis, no sleeps longer than the
+// helper's first backoff (100 ms).
+func TestPingWithRetry(t *testing.T) {
+	t.Run("immediate success", func(t *testing.T) {
+		var calls int
+		err := pingWithRetry(context.Background(), time.Second, 100*time.Millisecond,
+			func(context.Context) error { calls++; return nil })
+		require.NoError(t, err)
+		assert.Equal(t, 1, calls)
+	})
+
+	t.Run("succeeds after transient errors", func(t *testing.T) {
+		var calls int
+		err := pingWithRetry(context.Background(), 2*time.Second, 100*time.Millisecond,
+			func(context.Context) error {
+				calls++
+				if calls < 3 {
+					return errors.New("EOF")
+				}
+				return nil
+			})
+		require.NoError(t, err)
+		assert.Equal(t, 3, calls)
+	})
+
+	t.Run("exhausts budget returning last error", func(t *testing.T) {
+		want := errors.New("still EOF")
+		err := pingWithRetry(context.Background(), 250*time.Millisecond, 50*time.Millisecond,
+			func(context.Context) error { return want })
+		require.ErrorIs(t, err, want)
+	})
+
+	t.Run("aborts on context cancellation", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := pingWithRetry(ctx, time.Second, 100*time.Millisecond,
+			func(context.Context) error { return errors.New("boom") })
+		require.ErrorIs(t, err, context.Canceled)
+	})
+}
 
 // TestClient_ClearAll seeds every prefix the broker owns plus an
 // unrelated key, then asserts ClearAll wipes only the hover:* keys.

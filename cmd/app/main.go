@@ -547,7 +547,7 @@ func main() {
 		redisClient = client
 		defer redisClient.Close()
 
-		if err := redisClient.Ping(context.Background()); err != nil {
+		if err := redisClient.PingWithRetry(context.Background(), 30*time.Second, 3*time.Second); err != nil {
 			startupLog.Fatal("failed to ping Redis", "error", err)
 		}
 		startupLog.Info("connected to Redis")
