@@ -295,6 +295,7 @@ func (h *Handler) GetActiveOrganisationWithUser(w http.ResponseWriter, r *http.R
 func (h *Handler) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", h.HealthCheck)
 	mux.HandleFunc("/health/db", h.DatabaseHealthCheck)
+	mux.HandleFunc("/bot", h.BotInfoHandler)
 
 	mux.Handle("/v1/jobs", auth.AuthMiddleware(http.HandlerFunc(h.JobsHandler)))
 	mux.Handle("/v1/jobs/", auth.AuthMiddleware(http.HandlerFunc(h.JobHandler)))

@@ -30,7 +30,7 @@ Allow: /cart/view
 
 Sitemap: https://example.com/sitemap.xml
 `,
-			userAgent:    "Hover/1.0 (+https://www.goodnative.co/hover)",
+			userAgent:    "Hover/1.0 (+https://hover.app.goodnative.co/bot)",
 			wantDelay:    5,
 			wantSitemaps: []string{"https://example.com/sitemap.xml"},
 			wantDisallow: []string{"/checkout", "/cart"},
