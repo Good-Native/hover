@@ -126,12 +126,15 @@ func TestAdaptiveDelayWriteback_FailureClearsInFlight(t *testing.T) {
 	w.Observe(ctx, "retry.com", 3000)
 
 	// First write errors; in-flight flag must clear so a follow-up can retry.
+	// Hold the lock for the duration of the field read — persist mutates
+	// these fields, so checking them lock-free would race the goroutine.
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		w.mu.Lock()
 		state, ok := w.states["retry.com"]
+		cleared := ok && !state.inFlight && state.lastValueSec == -1
 		w.mu.Unlock()
-		if ok && !state.inFlight && state.lastValueSec == -1 {
+		if cleared {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
