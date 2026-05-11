@@ -32,6 +32,14 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.11] – 2026-05-11
+
+### Changed
+
+- Crawler user agent is now always exactly `config.UserAgent`. Dropped the dead
+  `Worker-<id>` suffix branch in `crawler.New` along with the unused variadic ID
+  parameter and struct field.
+
 ## [0.34.10] – 2026-05-11
 
 ### Changed
