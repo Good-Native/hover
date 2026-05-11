@@ -81,7 +81,21 @@ func TestAdaptiveDelayWriteback_FirstObservationPersists(t *testing.T) {
 	calls := p.snapshot()
 	require.Len(t, calls, 1)
 	assert.Equal(t, "first.com", calls[0].domain)
-	assert.Equal(t, 2, calls[0].seconds, "ms->seconds should integer-divide")
+	assert.Equal(t, 3, calls[0].seconds, "ms->seconds should round up so sub-second learning is preserved")
+}
+
+func TestAdaptiveDelayWriteback_SubSecondRoundsUpToOne(t *testing.T) {
+	p := &recordingPersister{}
+	w := newAdaptiveDelayWriteback(p)
+
+	// 500ms is the default pacer step; truncating to 0 would reseed an
+	// empty adaptive delay after a worker restart.
+	w.Observe(context.Background(), "subsec.com", 500)
+	waitForCalls(t, p, 1)
+
+	calls := p.snapshot()
+	require.Len(t, calls, 1)
+	assert.Equal(t, 1, calls[0].seconds)
 }
 
 func TestAdaptiveDelayWriteback_DebouncesWithinWindow(t *testing.T) {

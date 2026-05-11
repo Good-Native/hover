@@ -207,6 +207,25 @@ func TestDomainPacer_Release_ReturnsAdaptiveDelay(t *testing.T) {
 	assert.Equal(t, -1, got)
 }
 
+func TestDomainPacer_GetDomainInflight_SumsAcrossJobs(t *testing.T) {
+	client := newTestClient(t)
+	pacer := NewDomainPacer(client, DefaultPacerConfig())
+	ctx := context.Background()
+
+	// Empty hash returns 0.
+	total, err := pacer.GetDomainInflight(ctx, "fresh.com")
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), total)
+
+	require.NoError(t, pacer.IncrementInflight(ctx, "shared.com", "job-a"))
+	require.NoError(t, pacer.IncrementInflight(ctx, "shared.com", "job-a"))
+	require.NoError(t, pacer.IncrementInflight(ctx, "shared.com", "job-b"))
+
+	total, err = pacer.GetDomainInflight(ctx, "shared.com")
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), total, "domain inflight must sum every job's slot")
+}
+
 func TestDomainPacer_EffectiveCap(t *testing.T) {
 	client := newTestClient(t)
 	cfg := DefaultPacerConfig()

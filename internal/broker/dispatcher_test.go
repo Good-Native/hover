@@ -242,6 +242,35 @@ func TestDispatcher_DomainPacing_ReschedulesWhenGated(t *testing.T) {
 	_ = e2
 }
 
+// The per-domain cap must compare against total inflight across every
+// job hitting the host. With per-job slots, two concurrent jobs each
+// get one dispatch and the burst doubles — defeating the guard.
+func TestDispatcher_DomainCap_AggregatesAcrossJobs(t *testing.T) {
+	lister := &staticJobLister{ids: []string{"job-a", "job-b"}}
+	conc := &staticConcurrency{can: true}
+	d, s, pacer, _, _, _ := newDispatcherRig(t, lister, conc)
+	ctx := context.Background()
+
+	// Cap=1 against capped.com for both jobs combined.
+	require.NoError(t, pacer.Seed(ctx, "capped.com", 0, 5000, 0))
+
+	// Job A already has one inflight against the domain.
+	require.NoError(t, pacer.IncrementInflight(ctx, "capped.com", "job-a"))
+
+	// Job B tries to dispatch — the cap should hold because total
+	// inflight (1 from job-a) already equals domainCap.
+	now := time.Now()
+	seedEntry(t, s, "job-b", "t1", "capped.com", now)
+
+	n, err := d.dispatchJob(ctx, "job-b", now)
+	require.NoError(t, err)
+	assert.Equal(t, 0, n, "domain cap must aggregate across jobs to prevent cross-job burst")
+
+	pending, err := s.PendingCount(ctx, "job-b")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), pending)
+}
+
 // A domain whose learned adaptive_delay implies useful-concurrency=1
 // should saturate after the first dispatched task; subsequent entries
 // in the same tick must be skipped without consuming the gate. This is

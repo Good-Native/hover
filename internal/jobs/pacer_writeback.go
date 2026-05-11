@@ -18,9 +18,11 @@ type adaptiveDelayPersister interface {
 }
 
 type domainWriteState struct {
-	lastWriteAt  time.Time
-	lastValueSec int
-	inFlight     bool
+	// lastAttemptAt drives the debounce window so a failing Postgres
+	// can't trigger one retry per Release on the hot path.
+	lastAttemptAt time.Time
+	lastValueSec  int
+	inFlight      bool
 }
 
 // adaptiveDelayWriteback debounces writes of the pacer's learned per-domain
@@ -53,7 +55,15 @@ func (w *adaptiveDelayWriteback) Observe(ctx context.Context, domain string, new
 		return
 	}
 
-	seconds := newDelayMS / 1000
+	// Ceil ms→sec so a sub-second learned back-off (e.g. the default 500ms
+	// step) doesn't serialise to zero and reseed an empty adaptive delay
+	// after restart. The schema column is integer seconds; rounding up is
+	// the conservative choice — preferring slightly slower next-start
+	// crawl rate over reopening the burst we are trying to prevent.
+	seconds := 0
+	if newDelayMS > 0 {
+		seconds = (newDelayMS + 999) / 1000
+	}
 
 	w.mu.Lock()
 	state, ok := w.states[domain]
@@ -63,16 +73,26 @@ func (w *adaptiveDelayWriteback) Observe(ctx context.Context, domain string, new
 	}
 
 	now := time.Now()
-	tooSoon := !state.lastWriteAt.IsZero() && now.Sub(state.lastWriteAt) < w.interval
+	tooSoon := !state.lastAttemptAt.IsZero() && now.Sub(state.lastAttemptAt) < w.interval
 	unchanged := state.lastValueSec == seconds
 	if state.inFlight || tooSoon || unchanged {
 		w.mu.Unlock()
 		return
 	}
 	state.inFlight = true
+	state.lastAttemptAt = now
 	w.mu.Unlock()
 
-	go w.persist(ctx, domain, seconds)
+	// Detach from the caller's context: when the worker pool's Stop()
+	// cancels its ctx, in-flight write-backs would abort and the learned
+	// adaptive delay would be lost. A bounded timeout keeps a hung DB
+	// from leaking goroutines.
+	_ = ctx
+	go func() { //nolint:gosec // G118: detached on purpose so Stop() cannot abort the write-back
+		persistCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		w.persist(persistCtx, domain, seconds)
+	}()
 }
 
 func (w *adaptiveDelayWriteback) persist(ctx context.Context, domain string, seconds int) {
@@ -86,11 +106,12 @@ func (w *adaptiveDelayWriteback) persist(ctx context.Context, domain string, sec
 	}
 	state.inFlight = false
 	if err != nil {
-		jobsLog.Warn("adaptive-delay write-back failed, will retry next window",
+		// Debounce keys off lastAttemptAt (set in Observe) so a failing
+		// Postgres doesn't get retried on every subsequent Release.
+		jobsLog.Warn("adaptive-delay write-back failed, will retry after debounce window",
 			"error", err, "domain", domain, "adaptive_delay_seconds", seconds)
 		return
 	}
-	state.lastWriteAt = time.Now()
 	state.lastValueSec = seconds
 	jobsLog.Debug("persisted adaptive delay",
 		"domain", domain, "adaptive_delay_seconds", seconds)

@@ -384,7 +384,9 @@ func (swp *StreamWorkerPool) handleOutcome(ctx context.Context, msg broker.Strea
 	if err != nil {
 		jobsLog.Warn("pacer release failed", "error", err, "domain", domain)
 	}
-	swp.adaptiveWriteback.Observe(ctx, domain, newDelayMS)
+	if swp.adaptiveWriteback != nil {
+		swp.adaptiveWriteback.Observe(ctx, domain, newDelayMS)
+	}
 
 	// Hand the payload to the persister BEFORE QueueTaskUpdate — the
 	// batch manager mutates the row in place. Enqueue is non-blocking

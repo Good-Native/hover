@@ -130,11 +130,15 @@ func (p *DomainPacer) pushbackFloor(d time.Duration) time.Duration {
 
 // Release decrements inflight and updates adaptive_delay_ms. Returns the
 // post-update adaptive delay in ms (or -1 if Release did not touch it, e.g.
-// neither success nor rateLimited). Callers use the returned value to drive
-// debounced write-back to Postgres without an extra Redis read.
+// neither success nor rateLimited). DecrementInflight runs unconditionally:
+// if the adaptive update fails we still need to release the inflight slot
+// because the worker has already ACKed the message, otherwise the domain
+// inflight count drifts upward forever and the per-domain cap starts
+// refusing dispatches for work that is no longer running.
 func (p *DomainPacer) Release(ctx context.Context, domain, jobID string, success, rateLimited bool) (int, error) {
 	cfgKey := DomainConfigKey(domain)
 	newDelayMS := -1
+	var adaptiveErr error
 
 	if success {
 		stepDown := p.cfg.DelayStepDownMS
@@ -147,9 +151,8 @@ func (p *DomainPacer) Release(ctx context.Context, domain, jobID string, success
 			stepDown,
 		).Result()
 		if err != nil {
-			return -1, fmt.Errorf("broker: release success %s: %w", domain, err)
-		}
-		if v, ok := raw.(int64); ok {
+			adaptiveErr = fmt.Errorf("broker: release success %s: %w", domain, err)
+		} else if v, ok := raw.(int64); ok {
 			newDelayMS = int(v)
 		}
 	} else if rateLimited {
@@ -159,18 +162,20 @@ func (p *DomainPacer) Release(ctx context.Context, domain, jobID string, success
 			p.cfg.MaxDelayMS,
 		).Result()
 		if err != nil {
-			return -1, fmt.Errorf("broker: release rate-limited %s: %w", domain, err)
-		}
-		if v, ok := raw.(int64); ok {
+			adaptiveErr = fmt.Errorf("broker: release rate-limited %s: %w", domain, err)
+		} else if v, ok := raw.(int64); ok {
 			newDelayMS = int(v)
 		}
 		observability.RecordBrokerPacerPushback(ctx, domain, "rate_limited")
 	}
 
-	if err := p.DecrementInflight(ctx, domain, jobID); err != nil {
-		return newDelayMS, err
+	if decErr := p.DecrementInflight(ctx, domain, jobID); decErr != nil {
+		if adaptiveErr != nil {
+			return newDelayMS, fmt.Errorf("%w; decrement inflight: %v", adaptiveErr, decErr)
+		}
+		return newDelayMS, decErr
 	}
-	return newDelayMS, nil
+	return newDelayMS, adaptiveErr
 }
 
 // Restores pre-merge behaviour: in-memory limiter reset on each worker
@@ -259,4 +264,27 @@ func (p *DomainPacer) GetInflight(ctx context.Context, domain, jobID string) (in
 		return 0, nil
 	}
 	return val, err
+}
+
+// GetDomainInflight returns the sum of inflight counts across all jobs
+// targeting this domain. The per-domain cap must compare against this
+// total rather than any single job's slot, otherwise N concurrent jobs
+// against the same host each get to dispatch their own copy of the cap
+// and the burst-prevention path is defeated.
+func (p *DomainPacer) GetDomainInflight(ctx context.Context, domain string) (int64, error) {
+	vals, err := p.client.rdb.HVals(ctx, DomainInflightKey(domain)).Result()
+	if err != nil {
+		return 0, fmt.Errorf("broker: domain inflight %s: %w", domain, err)
+	}
+	var total int64
+	for _, v := range vals {
+		n, parseErr := strconv.ParseInt(v, 10, 64)
+		if parseErr != nil {
+			continue
+		}
+		if n > 0 {
+			total += n
+		}
+	}
+	return total, nil
 }
