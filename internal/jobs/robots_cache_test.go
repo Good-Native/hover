@@ -174,11 +174,14 @@ func TestGetRobotsRules_CollapsesConcurrentMisses(t *testing.T) {
 
 	const fanout = 20
 	var wg sync.WaitGroup
+	errCh := make(chan error, fanout)
 	wg.Add(fanout)
 	for i := 0; i < fanout; i++ {
 		go func() {
 			defer wg.Done()
-			_, _ = jm.GetRobotsRules(ctx, "swarm.com")
+			if _, err := jm.GetRobotsRules(ctx, "swarm.com"); err != nil {
+				errCh <- err
+			}
 		}()
 	}
 
@@ -189,6 +192,10 @@ func TestGetRobotsRules_CollapsesConcurrentMisses(t *testing.T) {
 	}
 	close(gate)
 	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("unexpected error from concurrent caller: %v", err)
+	}
 
 	if c := stub.calls.Load(); c != 1 {
 		t.Fatalf("singleflight should collapse %d concurrent misses to one fetch, got %d", fanout, c)
