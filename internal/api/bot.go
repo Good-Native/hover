@@ -22,7 +22,7 @@ a { color: #0a58ca; }
 <h1>Hover crawler</h1>
 
 <pre>User-Agent: Hover/1.0 (+https://hover.app.goodnative.co/bot)
-Operator:   Good Native Pty Ltd (Australia)
+Operator:   Do Harvey Pty Ltd t/a Good Native (Australia)
 Contact:    crawler@goodnative.co  (response within 1 business day)</pre>
 
 <h2>What it does</h2>
