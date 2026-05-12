@@ -32,6 +32,17 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.14] – 2026-05-12
+
+### Security
+
+- Bump `github.com/jackc/pgx/v5` from v5.7.6 to v5.9.2 to resolve a
+  memory-safety vulnerability (Dependabot alert #54).
+- Bump `@webflow/webflow-cli` from ^1.12.4 to ^1.21.0 in
+  `webflow-designer-extension-cli/` to clear transitive dev-dep vulnerabilities
+  (axios, follow-redirects, fast-uri, babel, postcss). Webflow extension is
+  dev-only tooling and does not ship to production.
+
 ## [0.34.13] – 2026-05-12
 
 ### Fixed
