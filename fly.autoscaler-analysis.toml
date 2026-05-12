@@ -21,7 +21,8 @@ primary_region = "syd"
   # metric is emitted with app=hover-worker. We're scaling hover-analysis
   # based on metrics emitted by hover-worker — that's intentional, and the
   # filter must match the emitter, not the target.
-  FAS_PROMETHEUS_QUERY = "sum(bee_broker_stream_length{app=\"hover-worker\",stream_type=\"lighthouse\"})"
+  # `or on() vector(0)` — see fly.autoscaler-worker.toml for rationale.
+  FAS_PROMETHEUS_QUERY = "sum(bee_broker_stream_length{app=\"hover-worker\",stream_type=\"lighthouse\"}) or on() vector(0)"
 
   # 25 lighthouse tasks per machine before a scale-up trigger. Cap at 10.
   # Sized off observed audit durations (p50 ~30s, p90 ~65s) so a single

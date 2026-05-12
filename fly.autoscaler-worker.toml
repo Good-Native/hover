@@ -29,7 +29,14 @@ primary_region = "syd"
   # [metrics] block in fly.worker.toml. Token is FlyV1 readonly.
   FAS_PROMETHEUS_ADDRESS = "https://api.fly.io/prometheus/personal"
   FAS_PROMETHEUS_METRIC_NAME = "worker_backlog"
-  FAS_PROMETHEUS_QUERY = "sum(bee_broker_stream_length{app=\"hover-worker\",stream_type=\"worker\"}) + sum(bee_broker_scheduled_zset_depth{app=\"hover-worker\"})"
+  # `or on() vector(0)` collapses an empty result to zero so fly-autoscaler
+  # doesn't log `empty prometheus result` whenever the broker gauges go
+  # stale (sync OTel Int64Gauges only emit on Record, so idle ticks produce
+  # series gaps). The trade-off: a real Redis outage now reads 0 instead of
+  # gapping — autoscaler scales to MIN=1 rather than holding count. Idle
+  # workers can't crawl during an outage anyway, and they restart cleanly
+  # once Redis recovers.
+  FAS_PROMETHEUS_QUERY = "(sum(bee_broker_stream_length{app=\"hover-worker\",stream_type=\"worker\"}) + sum(bee_broker_scheduled_zset_depth{app=\"hover-worker\"})) or on() vector(0)"
 
   # Worker autoscaling is plumbed but effectively dormant. The crawl
   # workers are I/O-bound and per-job concurrency is bounded by
