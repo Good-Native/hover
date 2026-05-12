@@ -28,7 +28,10 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Security
+
+- Bump `github.com/jackc/pgx/v5` from v5.7.6 to v5.9.2 to resolve a
+  memory-safety vulnerability (Dependabot alert #54).
 
 ## Full changelog history
 
