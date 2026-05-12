@@ -32,6 +32,16 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.12] – 2026-05-12
+
+### Changed
+
+- `JobManager.GetRobotsRules` now caches results per normalised domain (1h
+  positive TTL, 60s negative TTL), and collapses concurrent misses onto a single
+  origin fetch via singleflight. A long crawl previously refetched `/robots.txt`
+  every five minutes (stream worker's job-info TTL) and a 429 on `/robots.txt`
+  returned on the next read; both are now bounded.
+
 ## [0.34.11] – 2026-05-11
 
 ### Changed
