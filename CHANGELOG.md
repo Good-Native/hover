@@ -32,6 +32,35 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.15] – 2026-05-13
+
+### Fixed
+
+- `fly-autoscaler` no longer logs
+  `metrics collection failed: empty prometheus result` once a minute on both
+  `hover-autoscaler-worker` and `hover-autoscaler-analysis`. The broker gauges
+  (`bee_broker_stream_length`, `bee_broker_scheduled_zset_depth`) are
+  synchronous OTel `Int64Gauge`s, which only emit when `Record()` lands inside a
+  collect interval; during idle the series goes stale in Fly's managed
+  Prometheus and the autoscaler's PromQL returns no result. The autoscaler
+  queries now wrap with `or on() vector(0)` so an empty result collapses to zero
+  rather than erroring. Scaling behaviour is unchanged at idle (the existing
+  `max(1, …)` floor already kept a single machine running). Trade-off documented
+  inline: a true Redis outage now reads `0` instead of producing a series gap,
+  so the autoscaler scales to `MIN=1` rather than holding count — acceptable
+  because idle workers can't crawl during an outage anyway and restart cleanly
+  once Redis recovers. The full fix (async observable gauges) is tracked in a
+  follow-up issue.
+
+### Security
+
+- Bump `github.com/jackc/pgx/v5` from v5.7.6 to v5.9.2 to resolve a
+  memory-safety vulnerability (Dependabot alert #54).
+- Bump `@webflow/webflow-cli` from ^1.12.4 to ^1.21.0 in
+  `webflow-designer-extension-cli/` to clear transitive dev-dep vulnerabilities
+  (axios, follow-redirects, fast-uri, babel, postcss). Webflow extension is
+  dev-only tooling and does not ship to production.
+
 ## [0.34.14] – 2026-05-12
 
 ### Security
