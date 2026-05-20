@@ -26,6 +26,16 @@ const (
 	WAFVendorGeneric    = "generic"
 )
 
+// Only "block" (and unknown values) trip the circuit breaker; these
+// values denote recoverable CF actions that the 403/429 pacer path
+// already handles without terminating the job.
+var cfRecoverableMitigations = map[string]struct{}{
+	"challenge":         {},
+	"jschallenge":       {},
+	"managed_challenge": {},
+	"rate_limited":      {},
+}
+
 // DetectWAF inspects a response and reports whether it carries a
 // fingerprint of a known bot-protection layer. The function is pure: no
 // I/O, safe for table-driven tests. It is intentionally conservative on
@@ -52,16 +62,14 @@ func DetectWAF(statusCode int, headers http.Header, bodySample []byte) WAFDetect
 
 	blocking := isBlockingStatus(statusCode)
 
-	// cf-mitigated indicates Cloudflare took bot-management action
-	// (challenge, block, jschallenge, managed_challenge). It is only
-	// emitted on responses where CF intervened, so a non-empty value on
-	// any non-200 status is a reliable signal — including 429 challenges
-	// against datacentre egress IPs.
-	if v := strings.TrimSpace(headers.Get("Cf-Mitigated")); v != "" && statusCode != http.StatusOK {
+	if v := strings.ToLower(strings.TrimSpace(headers.Get("Cf-Mitigated"))); v != "" && statusCode != http.StatusOK {
+		if _, recoverable := cfRecoverableMitigations[v]; recoverable {
+			return WAFDetection{}
+		}
 		return WAFDetection{
 			Blocked: true,
 			Vendor:  WAFVendorCloudflare,
-			Reason:  "cf-mitigated header present on " + statusLabel(statusCode),
+			Reason:  "cf-mitigated=" + v + " on " + statusLabel(statusCode),
 		}
 	}
 
