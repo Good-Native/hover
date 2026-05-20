@@ -141,10 +141,52 @@ func TestDetectWAF(t *testing.T) {
 			wantBlocked: false,
 		},
 		{
+			name:   "cloudflare — cf-mitigated=jschallenge on 403 is recoverable",
+			status: http.StatusForbidden,
+			headers: http.Header{
+				"Cf-Mitigated": []string{"jschallenge"},
+				"Server":       []string{"cloudflare"},
+			},
+			body:        []byte("challenge page"),
+			wantBlocked: false,
+		},
+		{
+			name:   "cloudflare — cf-mitigated=rate_limited on 429 is recoverable",
+			status: http.StatusTooManyRequests,
+			headers: http.Header{
+				"Cf-Mitigated": []string{"rate_limited"},
+				"Server":       []string{"cloudflare"},
+			},
+			body:        []byte("rate limited"),
+			wantBlocked: false,
+		},
+		{
+			name:   "cloudflare — cf-mitigated normalisation (case/space) is recoverable",
+			status: http.StatusForbidden,
+			headers: http.Header{
+				"Cf-Mitigated": []string{" Managed_Challenge "},
+				"Server":       []string{"cloudflare"},
+			},
+			body:        []byte("checking your browser"),
+			wantBlocked: false,
+		},
+		{
 			name:   "cloudflare — cf-mitigated=block on 403 is a hard block",
 			status: http.StatusForbidden,
 			headers: http.Header{
 				"Cf-Mitigated": []string{"block"},
+				"Server":       []string{"cloudflare"},
+			},
+			body:         []byte("Access denied"),
+			wantBlocked:  true,
+			wantVendor:   WAFVendorCloudflare,
+			reasonPrefix: "cf-mitigated=block on 403",
+		},
+		{
+			name:   "cloudflare — cf-mitigated=BLOCK uppercase still trips",
+			status: http.StatusForbidden,
+			headers: http.Header{
+				"Cf-Mitigated": []string{"BLOCK"},
 				"Server":       []string{"cloudflare"},
 			},
 			body:         []byte("Access denied"),
