@@ -193,7 +193,12 @@ Relevant current behaviour:
 
 ## 11. Suggested Bucket Setup
 
-- bucket name: `task-html`
+> **Historical — superseded.** The `task-html` Supabase Storage bucket was
+> dropped on 2026-05-21. Page HTML now lives in the private Cloudflare R2 bucket
+> configured via `ARCHIVE_BUCKET` (production: `native-hover-archive`). See
+> `## 3. Recommended Approach` for the current design.
+
+- bucket name: `task-html` (no longer present)
 - visibility: private
 - access: signed URLs only when needed
 

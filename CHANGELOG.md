@@ -28,7 +28,20 @@ On merge, CI will:
 
 ## [Unreleased]
 
-_Add unreleased changes here._
+### Changed
+
+- Removed the legacy `task-html` Supabase Storage bucket. Page HTML has been
+  written direct to Cloudflare R2 since 2026-04-25, so the bucket was no longer
+  referenced by any code path but had retained the objects written during the
+  four-week window when it was the hot store. The accumulated bytes pushed the
+  Supabase project past its 100 GB allowance and triggered connection-slot
+  restrictions on the pooler, surfacing as `pgconn.ConnectError` events in
+  Sentry (HOVER-JG). The migration drops only the service-role RLS policy and
+  the bucket row; bucket contents must be cleared via the Supabase Storage
+  dashboard or API before the migration is applied, and the foreign key from
+  `storage.objects` to `storage.buckets` will block the migration otherwise as
+  an intentional safety net. The `tasks.html_storage_*` columns are retained for
+  historical rows and will be reviewed in a follow-up.
 
 ## Full changelog history
 
