@@ -30,17 +30,17 @@ On merge, CI will:
 
 ### Changed
 
-- Removed the legacy `task-html` Supabase Storage bucket. Page HTML has been
-  written direct to Cloudflare R2 since 2026-04-25, so the bucket was no longer
-  referenced by any code path but had retained the objects written during the
-  four-week window when it was the hot store. The accumulated bytes pushed the
-  Supabase project past its 100 GB allowance and triggered connection-slot
+- Retired the legacy `task-html` Supabase Storage bucket. Page HTML has been
+  written directly to Cloudflare R2 since 2026-04-25, so the bucket was no
+  longer referenced by any code path but had retained the objects written during
+  the four-week window when it was the hot store. The accumulated bytes pushed
+  the Supabase project past its 100 GB allowance and triggered connection-slot
   restrictions on the pooler, surfacing as `pgconn.ConnectError` events in
-  Sentry (HOVER-JG). The migration drops only the service-role RLS policy and
-  the bucket row; bucket contents must be cleared via the Supabase Storage
-  dashboard or API before the migration is applied, and the foreign key from
-  `storage.objects` to `storage.buckets` will block the migration otherwise as
-  an intentional safety net.
+  Sentry (HOVER-JG). The migration drops only the service-role RLS policy on
+  `storage.objects`. Removal of the bucket row itself cannot be done via SQL
+  (Supabase blocks direct deletes from `storage.buckets` with SQLSTATE 42501)
+  and must be performed via the Supabase Storage dashboard or API as a manual
+  operational step, after the bucket has been emptied.
 - Cleared dangling `task-html` pointers on the `tasks` table. Rows written
   between 2026-03-21 and 2026-04-25 had `html_storage_bucket = 'task-html'` and
   a `html_storage_path` referencing the now-removed bucket. Both columns are
