@@ -32,6 +32,22 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.17] – 2026-05-21
+
+### Fixed
+
+- WAF circuit breaker no longer trips on recoverable Cloudflare `Cf-Mitigated`
+  values (`challenge`, `jschallenge`, `managed_challenge`, `rate_limited`); the
+  403/429 status code still drives pacer back-off. Only `block` (and unknown
+  values) trips the breaker.
+
+### Added
+
+- Pacer warm-up floor: never-crawled domains seed `adaptive_delay_ms` to
+  `GNH_PACER_WARMUP_DELAY_MS` (default 2000) instead of 0, so the per-domain
+  inflight cap is active from the first dispatch. Steps down via the existing
+  success path.
+
 ## [0.34.16] – 2026-05-21
 
 ### Changed

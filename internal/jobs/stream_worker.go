@@ -85,6 +85,19 @@ func DefaultStreamWorkerOpts() StreamWorkerOpts {
 
 const jobInfoTTL = 5 * time.Minute
 
+const defaultPacerWarmupDelayMS = 2000
+
+func pacerWarmupDelayMS() int {
+	if v := strings.TrimSpace(os.Getenv("GNH_PACER_WARMUP_DELAY_MS")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+		jobsLog.Warn("invalid GNH_PACER_WARMUP_DELAY_MS; using default",
+			"value", v, "default", defaultPacerWarmupDelayMS)
+	}
+	return defaultPacerWarmupDelayMS
+}
+
 type cachedJobInfo struct {
 	info      *JobInfo
 	expiresAt time.Time
@@ -759,6 +772,12 @@ func (swp *StreamWorkerPool) fetchJobInfo(ctx context.Context, jobID string) (*J
 		baseDelayMS := info.CrawlDelay * 1000
 		adaptiveDelayMS := info.AdaptiveDelay * 1000
 		floorMS := info.AdaptiveDelayFloor * 1000
+		// NULL means never crawled; a stored 0 is a learned value we trust.
+		if !adaptiveDelay.Valid {
+			if warmup := pacerWarmupDelayMS(); warmup > 0 {
+				adaptiveDelayMS = warmup
+			}
+		}
 		if seedErr := swp.pacer.Seed(ctx, info.DomainName, baseDelayMS, adaptiveDelayMS, floorMS); seedErr != nil {
 			jobsLog.Warn("pacer seed from postgres failed, continuing",
 				"error", seedErr, "domain", info.DomainName)
