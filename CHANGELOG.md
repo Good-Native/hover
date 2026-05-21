@@ -40,8 +40,15 @@ On merge, CI will:
   the bucket row; bucket contents must be cleared via the Supabase Storage
   dashboard or API before the migration is applied, and the foreign key from
   `storage.objects` to `storage.buckets` will block the migration otherwise as
-  an intentional safety net. The `tasks.html_storage_*` columns are retained for
-  historical rows and will be reviewed in a follow-up.
+  an intentional safety net.
+- Cleared dangling `task-html` pointers on the `tasks` table. Rows written
+  between 2026-03-21 and 2026-04-25 had `html_storage_bucket = 'task-html'` and
+  a `html_storage_path` referencing the now-removed bucket. Both columns are
+  NULLed for those rows; the remaining HTML metadata columns
+  (`html_content_type`, `html_content_encoding`, `html_size_bytes`,
+  `html_compressed_size_bytes`, `html_sha256`, `html_captured_at`) are kept for
+  historical analysis. The `html_storage_*` columns remain in active use for
+  newer rows, which point at the Cloudflare R2 bucket.
 
 ## Full changelog history
 
