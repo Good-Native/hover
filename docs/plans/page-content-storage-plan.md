@@ -193,15 +193,12 @@ Relevant current behaviour:
 
 ## 11. Suggested Bucket Setup
 
-- bucket name: `task-html`
-- visibility: private
-- access: signed URLs only when needed
-
-Reason:
-
-- page bodies may contain sensitive content, tokens in markup, or unpublished
-  data
-- private storage is the safer default
+> **Historical — superseded.** The `task-html` Supabase Storage bucket was
+> retired on 2026-05-21. Page HTML now lives in the private Cloudflare R2 bucket
+> configured via `ARCHIVE_BUCKET` (production: `native-hover-archive`). See
+> `## 3. Recommended Approach` for the current design. The original Supabase
+> Storage recommendations that previously occupied this section have been
+> removed to avoid being mistaken for current guidance.
 
 ## 12. Data Volume Planning
 

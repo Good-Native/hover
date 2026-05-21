@@ -32,6 +32,30 @@ _Add unreleased changes here._
 
 ## Full changelog history
 
+## [0.34.16] – 2026-05-21
+
+### Changed
+
+- Retired the legacy `task-html` Supabase Storage bucket. Page HTML has been
+  written directly to Cloudflare R2 since 2026-04-25, so the bucket was no
+  longer referenced by any code path but had retained the objects written during
+  the four-week window when it was the hot store. The accumulated bytes pushed
+  the Supabase project past its 100 GB allowance and triggered connection-slot
+  restrictions on the pooler, surfacing as `pgconn.ConnectError` events in
+  Sentry (HOVER-JG). The migration drops only the service-role RLS policy on
+  `storage.objects`. Removal of the bucket row itself cannot be done via SQL
+  (Supabase blocks direct deletes from `storage.buckets` with SQLSTATE 42501)
+  and must be performed via the Supabase Storage dashboard or API as a manual
+  operational step, after the bucket has been emptied.
+- Cleared dangling `task-html` pointers on the `tasks` table. Rows written
+  between 2026-03-21 and 2026-04-25 had `html_storage_bucket = 'task-html'` and
+  a `html_storage_path` referencing the now-removed bucket. Both columns are
+  NULLed for those rows; the remaining HTML metadata columns
+  (`html_content_type`, `html_content_encoding`, `html_size_bytes`,
+  `html_compressed_size_bytes`, `html_sha256`, `html_captured_at`) are kept for
+  historical analysis. The `html_storage_*` columns remain in active use for
+  newer rows, which point at the Cloudflare R2 bucket.
+
 ## [0.34.15] – 2026-05-13
 
 ### Fixed
